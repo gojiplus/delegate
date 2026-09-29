@@ -153,7 +153,18 @@ export async function buildServer(app: App, opts: ServerOptions) {
         objectSrc: ["'none'"],
       },
     },
-    crossOriginEmbedderPolicy: false,
+    // Every asset is self-hosted, so the page can refuse cross-origin embeds entirely.
+    crossOriginEmbedderPolicy: { policy: "require-corp" },
+  });
+  // Financial data must never sit in a browser or proxy cache; the app shell
+  // is revalidated each time. Only content-hashed assets may be cached.
+  f.addHook("onSend", async (req, reply) => {
+    if (req.url.startsWith("/api/")) reply.header("cache-control", "no-store");
+    else if (!req.url.startsWith("/assets/")) reply.header("cache-control", "no-cache");
+    reply.header(
+      "permissions-policy",
+      "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-get=(self), publickey-credentials-create=(self)",
+    );
   });
   await f.register(rateLimit, {
     global: false,

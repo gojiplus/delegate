@@ -298,6 +298,12 @@ describe("6. browser hardening", () => {
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).not.toContain("unsafe-inline");
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["cross-origin-embedder-policy"]).toBe("require-corp");
+    expect(String(res.headers["permissions-policy"])).toContain("camera=()");
+    const api = await buildServer(app, { rp, devLogin: false });
+    const me = await api.inject({ method: "GET", url: "/api/me" });
+    await api.close();
+    expect(me.headers["cache-control"]).toBe("no-store");
   });
 
   it("loads nothing from third-party hosts", async () => {
