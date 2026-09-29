@@ -1,6 +1,6 @@
 # Security policy
 
-FamilyOps handles delegated access to people's finances, so security reports get priority.
+Delegate handles delegated access to people's finances, so security reports get priority.
 
 ## Reporting a vulnerability
 

@@ -482,7 +482,7 @@ export function Home({ me, onMeChange }: { me: Me; onMeChange: () => void }) {
                       )
                     }
                   >
-                    Use in FamilyOps
+                    Use in the app
                   </button>
                 )}
               </div>

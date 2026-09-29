@@ -361,8 +361,8 @@ describe("9. least privilege in the database", () => {
     ).rejects.toThrow(/permission denied/);
   });
 
-  it("the provider role cannot read FamilyOps data", async () => {
-    const provider = createDb(app.url, "familyops_fakepay");
+  it("the provider role cannot read Delegate data", async () => {
+    const provider = createDb(app.url, "delegate_fakepay");
     await expect(provider.selectFrom("person").selectAll().execute()).rejects.toThrow(
       /permission denied/,
     );
@@ -512,19 +512,19 @@ describe("red-team follow-ups", () => {
           app.admin,
         )
       ).rows[0]!.run_at.getTime();
-    await sql`select public.familyops_enqueue('dispatch', ${payload}::json, ${soon}::timestamptz)`.execute(
+    await sql`select public.delegate_enqueue('dispatch', ${payload}::json, ${soon}::timestamptz)`.execute(
       app.kernel.db,
     );
-    await sql`select public.familyops_enqueue('dispatch', ${payload}::json, ${later}::timestamptz)`.execute(
+    await sql`select public.delegate_enqueue('dispatch', ${payload}::json, ${later}::timestamptz)`.execute(
       app.kernel.db,
     );
     expect(await runAt()).toBe(soon.getTime());
-    await sql`select public.familyops_enqueue('dispatch', ${payload}::json, ${earlier}::timestamptz)`.execute(
+    await sql`select public.delegate_enqueue('dispatch', ${payload}::json, ${earlier}::timestamptz)`.execute(
       app.kernel.db,
     );
     expect(await runAt()).toBe(earlier.getTime());
     await expect(
-      sql`select public.familyops_enqueue('drop_everything', ${payload}::json, null)`.execute(
+      sql`select public.delegate_enqueue('drop_everything', ${payload}::json, null)`.execute(
         app.kernel.db,
       ),
     ).rejects.toThrow(/unknown task/);

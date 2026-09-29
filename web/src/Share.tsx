@@ -222,7 +222,7 @@ export function Share({ me }: { me: Me }) {
               ))}
             {resources.data?.some((r) => !r.selected) && (
               <p className="soft small">
-                Accounts you have not chosen to use in FamilyOps are not listed.
+                Accounts you have not chosen to use in the app are not listed.
               </p>
             )}
           </fieldset>

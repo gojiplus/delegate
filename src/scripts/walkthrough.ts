@@ -51,7 +51,7 @@ for (const label of [
 ]) {
   await maria
     .locator("li", { hasText: label })
-    .getByRole("button", { name: "Use in FamilyOps" })
+    .getByRole("button", { name: "Use in the app" })
     .click();
   await maria
     .locator("li", { hasText: label })
@@ -84,13 +84,13 @@ await sam
   .locator("li", { hasText: "Summit Visa statement" })
   .getByRole("button", { name: "Prepare a payment" })
   .click();
-await sam.getByText("Can be sent from FamilyOps").waitFor();
+await sam.getByText("Can be sent from the app").waitFor();
 await shot(sam, "05-prepare");
 await sam.getByLabel("Pay to").selectOption({ label: "Harbor Savings ••5510" });
 await sam.getByText("Not available.").waitFor();
 await shot(sam, "06-honest-capability");
 await sam.getByLabel("Pay to").selectOption({ label: "Summit Visa ••9042" });
-await sam.getByText("Can be sent from FamilyOps").waitFor();
+await sam.getByText("Can be sent from the app").waitFor();
 await sam.getByRole("button", { name: "Send to Maria Alvarez for approval" }).click();
 await sam.getByText("Awaiting approval").first().waitFor();
 

@@ -391,7 +391,7 @@ describe("R8. the application role can rewrite queued jobs through the definer f
       const intentId = await approvedIntent(s, 3_500);
       const key = `dispatch:${intentId}`;
       const before = (await jobs(s.app, "dispatch")).find((j) => j.key === key)!;
-      await sql`select public.familyops_enqueue(
+      await sql`select public.delegate_enqueue(
         'dispatch', '{"intentId":"nothing"}'::json, '2999-01-01'::timestamptz, ${key}, 25
       )`
         .execute(s.app.kernel.db)

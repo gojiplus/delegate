@@ -71,7 +71,7 @@ export async function setTrustedContact(
           recipient_person_id: null,
           recipient_email: previous.email,
           kind: "trusted_contact.replaced",
-          message: "You are no longer the trusted contact for this FamilyOps account.",
+          message: "You are no longer the trusted contact for this Delegate account.",
         })
         .execute();
     }

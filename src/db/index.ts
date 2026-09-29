@@ -17,7 +17,7 @@ pg.types.setTypeParser(pg.types.builtins.DATE, (v) => v);
 
 // Every connection drops to a least-privilege role when one is given, so the
 // database, not only the application, refuses what that role must not do.
-export type DbRole = "familyops_app" | "familyops_fakepay";
+export type DbRole = "delegate_app" | "delegate_fakepay";
 
 export function createDb(connectionString: string, role?: DbRole): Db {
   const pool = new pg.Pool({ connectionString, max: 20 });
@@ -51,8 +51,8 @@ export async function migrate(db: Db): Promise<void> {
 // can't postpone it.
 export async function grantJobPrivileges(db: Db): Promise<void> {
   await sql`
-    drop function if exists public.familyops_enqueue(text, json, timestamptz, text, integer);
-    create or replace function public.familyops_enqueue(p_identifier text, p_payload json, p_run_at timestamptz)
+    drop function if exists public.delegate_enqueue(text, json, timestamptz, text, integer);
+    create or replace function public.delegate_enqueue(p_identifier text, p_payload json, p_run_at timestamptz)
     returns void
     language plpgsql security definer set search_path = pg_catalog, graphile_worker as $$
     declare
@@ -77,7 +77,7 @@ export async function grantJobPrivileges(db: Db): Promise<void> {
         where key = v_key and locked_at is null;
       end if;
     end $$;
-    revoke all on function public.familyops_enqueue(text, json, timestamptz) from public;
-    grant execute on function public.familyops_enqueue(text, json, timestamptz) to familyops_app;
+    revoke all on function public.delegate_enqueue(text, json, timestamptz) from public;
+    grant execute on function public.delegate_enqueue(text, json, timestamptz) to delegate_app;
   `.execute(db);
 }

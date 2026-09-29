@@ -279,7 +279,7 @@ export async function requestApproval(k: Kernel, actorId: string, intentId: stri
         ownerId: i.owner_id,
         kind: "intent.approval_requested",
         message:
-          "A payment is waiting for your approval. Open FamilyOps yourself to review it; approving always needs your passkey.",
+          "A payment is waiting for your approval. Open Delegate yourself to review it; approving always needs your passkey.",
         toOwner: true,
       });
     }

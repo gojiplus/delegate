@@ -5,7 +5,7 @@ import { sign } from "./passkey";
 import { StatusTag, statusLabel } from "./Status";
 
 const WHO: Record<string, string> = {
-  system: "FamilyOps",
+  system: "the app",
   provider: "Payment provider (simulated)",
 };
 

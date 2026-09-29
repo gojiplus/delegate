@@ -2,8 +2,8 @@ services:
   db:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: familyops
-      POSTGRES_PASSWORD: familyops
-      POSTGRES_DB: familyops
+      POSTGRES_USER: delegate
+      POSTGRES_PASSWORD: delegate
+      POSTGRES_DB: delegate
     ports:
       - "54329:5432"

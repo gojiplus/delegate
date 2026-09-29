@@ -9,9 +9,9 @@ function localDate() {
 }
 
 const CAP_TEXT: Record<Capability["state"], string> = {
-  executable: "Can be sent from FamilyOps",
+  executable: "Can be sent from the app",
   requires_setup: "Needs setup first",
-  external: "Must be paid outside FamilyOps",
+  external: "Must be paid outside the app",
   unavailable: "Not available",
 };
 
