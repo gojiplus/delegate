@@ -35,4 +35,46 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Dependency audit
+        run: npm audit --audit-level=high
       - run: make ci
+
+  # Passive scan of the app in its production shape: the API serving the built
+  # web app under its real headers and CSP, with demo features switched off.
+  zap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      pg:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web
+      - run: npm run migrate
+      - name: Start the API in production mode
+        run: |
+          export NODE_ENV=production FAKEPAY_WEBHOOK_SECRET=ci-only PORT=8787 RP_ORIGIN=http://localhost:8787
+          export AUDIT_SIGNING_KEY="$(node -e "process.stdout.write(require('crypto').generateKeyPairSync('ed25519').privateKey.export({type:'pkcs8',format:'pem'}))")"
+          nohup npx tsx src/api/main.ts > api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8787/ >/dev/null && exit 0; sleep 1; done
+          cat api.log; exit 1
+      - name: OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: http://localhost:8787
+          rules_file_name: .zap/rules.tsv
+          fail_action: true
+          allow_issue_writing: false

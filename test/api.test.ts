@@ -1,21 +1,26 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../src/api/server.js";
-import type { App } from "../src/app.js";
-import { connectAll, freshApp, grant, today } from "./helpers.js";
+import { SESSION_COOKIE } from "../src/kernel/sessions.js";
+import { connectAll, freshApp, grant, today, type TestApp } from "./helpers.js";
 
 // The HTTP layer adds one thing the kernel cannot check: that the actor comes
 // from the session and nothing else. These tests go through real routes.
 
-let app: App;
+let app: TestApp;
 let server: FastifyInstance;
 let maria: Record<string, string>;
 const rp = { id: "localhost", name: "test", origin: "http://localhost:5173" };
 
 async function login(personId: string) {
-  const res = await server.inject({ method: "POST", url: "/api/dev/login", payload: { personId } });
-  const c = res.cookies.find((x) => x.name === "sid")!;
-  return { cookie: `sid=${c.value}` };
+  const res = await server.inject({
+    method: "POST",
+    url: "/api/dev/login",
+    payload: { personId },
+    headers: { origin: rp.origin },
+  });
+  const c = res.cookies.find((x) => x.name === SESSION_COOKIE)!;
+  return { cookie: `${SESSION_COOKIE}=${c.value}`, origin: rp.origin };
 }
 
 beforeAll(async () => {

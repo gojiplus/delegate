@@ -10,6 +10,7 @@ import {
 import type { Tx } from "../db/index.js";
 import { audit } from "./audit.js";
 import type { Kernel } from "./context.js";
+import { notify } from "./notify.js";
 import { KernelError } from "./registry.js";
 import {
   consumeStepUp,
@@ -82,7 +83,19 @@ export function passkeyVerifier(rp: RelyingParty): StepUpVerifier {
   };
 }
 
-export async function registrationOptions(k: Kernel, rp: RelyingParty, personId: string) {
+export const enrolBinding = (personId: string) => `enrol:${personId}`;
+
+// Adding a passkey is the most dangerous thing a session can do, because a
+// passkey is what approves payments, so a session alone never suffices. With
+// a passkey already enrolled, adding another needs a fresh assertion from an
+// existing one; with none, only inside the window opened by account creation
+// or by completed recovery verification.
+export async function registrationOptions(
+  k: Kernel,
+  rp: RelyingParty,
+  personId: string,
+  stepUp?: unknown,
+) {
   const person = await k.db
     .selectFrom("person")
     .selectAll()
@@ -93,9 +106,20 @@ export async function registrationOptions(k: Kernel, rp: RelyingParty, personId:
     .select(["id"])
     .where("person_id", "=", personId)
     .execute();
-  const challenge = await k.db
-    .transaction()
-    .execute((tx) => issueChallenge(tx, personId, "register", null));
+  const challenge = await k.db.transaction().execute(async (tx) => {
+    if (existing.length) {
+      await consumeStepUp(tx, k.stepUp, personId, "enrol", enrolBinding(personId), stepUp);
+    } else if (
+      !person.enrolment_open_until ||
+      person.enrolment_open_until.getTime() <= Date.now()
+    ) {
+      throw new KernelError(
+        "stepup_required",
+        "adding a passkey needs an existing passkey or account recovery",
+      );
+    }
+    return issueChallenge(tx, personId, "register", null);
+  });
   return generateRegistrationOptions({
     rpName: rp.name,
     rpID: rp.id,
@@ -143,6 +167,19 @@ export async function registerPasskey(
       },
     };
     await consumeStepUp(tx, verifier, personId, "register", null, response);
+    await tx
+      .updateTable("person")
+      .set({ enrolment_open_until: null })
+      .where("id", "=", personId)
+      .execute();
+    await notify(tx, {
+      ownerId: personId,
+      kind: "passkey.added",
+      message:
+        "A new passkey was added to your account. If this wasn't you, stop all payments and contact support.",
+      toOwner: true,
+      toTrustedContact: true,
+    });
     await audit(tx, {
       actorId: personId,
       actorKind: "person",

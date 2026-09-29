@@ -2,6 +2,8 @@ import { isSupport } from "./access.js";
 import { audit } from "./audit.js";
 import type { Kernel } from "./context.js";
 import { enqueue } from "./jobs.js";
+import { notify } from "./notify.js";
+import { endAllSessions } from "./sessions.js";
 import { KernelError } from "./registry.js";
 import { consumeStepUp } from "./stepup.js";
 
@@ -28,8 +30,7 @@ export async function setSubmissionsEnabled(k: Kernel, actorId: string, enabled:
         .where("status", "=", "Scheduled")
         .where("hold_reason", "is not", null)
         .execute();
-      for (const h of held)
-        await enqueue(tx, "dispatch", { intentId: h.id }, { jobKey: `dispatch:${h.id}` });
+      for (const h of held) await enqueue(tx, "dispatch", { intentId: h.id });
     }
     await audit(tx, {
       actorId,
@@ -79,8 +80,7 @@ export async function unfreezeOwner(k: Kernel, ownerId: string, stepUpResponse: 
       .where("status", "=", "Scheduled")
       .where("hold_reason", "is not", null)
       .execute();
-    for (const h of held)
-      await enqueue(tx, "dispatch", { intentId: h.id }, { jobKey: `dispatch:${h.id}` });
+    for (const h of held) await enqueue(tx, "dispatch", { intentId: h.id });
     await audit(tx, {
       actorId: ownerId,
       actorKind: "person",
@@ -109,12 +109,54 @@ export async function startRecovery(k: Kernel, actorId: string, ownerId: string)
           .doUpdateSet({ reason: "account recovery in progress", frozen_by: actorId }),
       )
       .execute();
+    // Whoever holds a session now, it is not trusted to finish recovery.
+    await endAllSessions(tx, ownerId);
+    await tx
+      .updateTable("person")
+      .set({ recovery_started_at: new Date() })
+      .where("id", "=", ownerId)
+      .execute();
+    await notify(tx, {
+      ownerId,
+      kind: "recovery.started",
+      message:
+        "Account recovery was started. All payments are stopped and every sign-in was ended until identity is verified again. If you didn't ask for this, contact support.",
+      toOwner: true,
+      toTrustedContact: true,
+    });
     await audit(tx, {
       actorId,
       actorKind: actorId === ownerId ? "person" : "support",
       ownerId,
       action: "recovery.started",
     });
+  });
+}
+
+const ENROLMENT_WINDOW_MS = 60 * 60 * 1000;
+
+// Independent identity verification. In R0 a support agent attests to it; in
+// R1 this is an identity-verification provider. It opens a one-hour window in
+// which the owner, and only the owner, can enrol a new first passkey.
+export async function completeRecoveryVerification(k: Kernel, actorId: string, ownerId: string) {
+  await requireSupport(k, actorId);
+  await k.db.transaction().execute(async (tx) => {
+    const p = await tx
+      .selectFrom("person")
+      .select("recovery_started_at")
+      .where("id", "=", ownerId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!p?.recovery_started_at) throw new KernelError("conflict", "no recovery in progress");
+    await tx
+      .updateTable("person")
+      .set({
+        enrolment_open_until: new Date(Date.now() + ENROLMENT_WINDOW_MS),
+        recovery_started_at: null,
+      })
+      .where("id", "=", ownerId)
+      .execute();
+    await audit(tx, { actorId, actorKind: "support", ownerId, action: "recovery.verified" });
   });
 }
 

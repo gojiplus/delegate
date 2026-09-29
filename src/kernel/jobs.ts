@@ -6,17 +6,17 @@ import type { Executor } from "../db/index.js";
 // if the state change that called for it committed.
 export type JobName = "dispatch" | "reconcile" | "process_inbox" | "cancel_in_flight";
 
+// The job key is derived inside the database from the task and payload, so
+// enqueuing is idempotent per intent (or per webhook event) by construction.
 export async function enqueue(
   ex: Executor,
   task: JobName,
   payload: Record<string, unknown>,
-  opts: { runAt?: Date; jobKey?: string } = {},
+  opts: { runAt?: Date } = {},
 ): Promise<void> {
-  await sql`select graphile_worker.add_job(
+  await sql`select public.familyops_enqueue(
     ${task},
     ${JSON.stringify(payload)}::json,
-    run_at => ${opts.runAt ?? null}::timestamptz,
-    job_key => ${opts.jobKey ?? null}::text,
-    max_attempts => 25
+    ${opts.runAt ?? null}::timestamptz
   )`.execute(ex);
 }

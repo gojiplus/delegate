@@ -1,11 +1,10 @@
 import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { App } from "../src/app.js";
 import { canAccess, visibleResourceIds } from "../src/kernel/access.js";
 import { setGrantStatus } from "../src/kernel/grants.js";
 import { addPayee, selectAccounts } from "../src/modules/finance/connections.js";
 import { accountsView } from "../src/modules/finance/reads.js";
-import { connectAll, freshApp, grant } from "./helpers.js";
+import { connectAll, freshApp, grant, type TestApp, resume } from "./helpers.js";
 
 // The SQL authorisation is checked against an in-memory model that shares no
 // code with it: random sequences of grant, pause, resume, revoke and deselect,
@@ -42,7 +41,7 @@ interface G {
   status: "active" | "paused" | "revoked";
 }
 
-let app: App;
+let app: TestApp;
 let resources: R[];
 
 beforeAll(async () => {
@@ -157,7 +156,8 @@ describe("authorisation matches an independent model", () => {
             const live = model.grants.filter((g) => g.status !== "revoked");
             const g = live[op.g % Math.max(live.length, 1)];
             if (!g) continue;
-            await setGrantStatus(app.kernel, g.grantor, g.id, op.status);
+            if (op.status === "active") await resume(app.kernel, g.grantor, g.id);
+            else await setGrantStatus(app.kernel, g.grantor, g.id, op.status);
             g.status = op.status;
           } else {
             const r = model.resources[op.r % model.resources.length]!;

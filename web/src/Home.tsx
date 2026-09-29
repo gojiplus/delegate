@@ -95,6 +95,58 @@ function Obligation({ w, canPrepare }: { w: WorkItem; canPrepare: boolean }) {
   );
 }
 
+function TrustedContact() {
+  const current = useLoad<{ name: string; email: string } | null>("/api/trusted-contact");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <>
+      <p className="soft">
+        Someone who does not help with your accounts, told when anyone gets access or a payment
+        someone else prepared is approved.
+      </p>
+      {current.data ? (
+        <p>
+          <strong>{current.data.name}</strong> ({current.data.email})
+        </p>
+      ) : (
+        <p className="soft">No trusted contact yet.</p>
+      )}
+      <div className="row">
+        <label>
+          Name <input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label>
+          Email <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <button
+          className="quiet"
+          disabled={!name || !email}
+          onClick={async () => {
+            try {
+              setErr(null);
+              const contact = { name, email };
+              const options = await api<Parameters<typeof sign>[0]>(
+                "POST",
+                "/api/trusted-contact/options",
+                contact,
+              );
+              await api("POST", "/api/trusted-contact", { contact, stepUp: await sign(options) });
+              window.location.reload();
+            } catch (e) {
+              setErr(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        >
+          {current.data ? "Change with passkey" : "Save with passkey"}
+        </button>
+      </div>
+      {err && <p className="error">{err}</p>}
+    </>
+  );
+}
+
 function PaymentsList({ intents, me }: { intents: IntentSummary[]; me: Me }) {
   if (!intents.length) return <p className="soft">No payments yet.</p>;
   return (
@@ -123,8 +175,19 @@ function GrantLine({ g, me, scopes }: { g: Grant; me: Me; scopes: Me["scopes"] }
       )
     )
       return;
+    // Resuming restores authority, so it is signed with the passkey like a new grant.
+    const stepUp =
+      status === "active"
+        ? await sign(
+            await api<Parameters<typeof sign>[0]>(
+              "POST",
+              `/api/delegation-grants/${g.id}/resume-options`,
+            ),
+          )
+        : undefined;
     const r = await api<{ inFlight: string[] }>("POST", `/api/delegation-grants/${g.id}/status`, {
       status,
+      stepUp,
     });
     if (r.inFlight.length)
       window.alert(
@@ -161,7 +224,7 @@ function GrantLine({ g, me, scopes }: { g: Grant; me: Me; scopes: Me["scopes"] }
             </button>
           ) : (
             <button className="quiet" onClick={() => set("active")}>
-              Resume
+              Resume with passkey
             </button>
           )}
           <button className="danger" onClick={() => set("revoked")}>
@@ -186,6 +249,10 @@ export function Home({ me, onMeChange }: { me: Me; onMeChange: () => void }) {
       "/api/grant-requests",
     );
   const queue = useLoad<Queue>("/api/queue");
+  const notices =
+    useLoad<{ id: string; kind: string; message: string; created_at: string }[]>(
+      "/api/notifications",
+    );
   const [err, setErr] = useState<string | null>(null);
 
   const act = async (f: () => Promise<unknown>) => {
@@ -466,9 +533,33 @@ export function Home({ me, onMeChange }: { me: Me; onMeChange: () => void }) {
         </>
       )}
 
+      <h2>Notices</h2>
+      <p className="soft">
+        In the pilot these arrive by email or text, outside this app. Here they are listed so you
+        can see what would be sent.
+      </p>
+      {notices.data?.length ? (
+        <ul className="plain">
+          {notices.data.slice(0, 8).map((n) => (
+            <li key={n.id}>
+              <div>{n.message}</div>
+              <div className="soft small">{when(n.created_at)}</div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="soft">Nothing yet.</p>
+      )}
+
+      <h2>Trusted contact</h2>
+      <TrustedContact />
+
       <h2>Your records</h2>
       <div className="row">
         <a href="/api/audit/export">Download everything recorded about your accounts</a>
+        <button className="quiet" onClick={() => act(() => api("POST", "/api/sessions/end-all"))}>
+          Sign out everywhere
+        </button>
         {!me.freeze && (
           <button
             className="danger"

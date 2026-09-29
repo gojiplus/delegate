@@ -1,12 +1,24 @@
-import { randomBytes } from "node:crypto";
+import type { KeyObject } from "node:crypto";
 import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
 import type { App } from "../app.js";
 import { isSupport, peopleIHelp } from "../kernel/access.js";
-import { audit, exportAudit, verifyChain } from "../kernel/audit.js";
 import {
+  audit,
+  exportAudit,
+  exportCheckpoints,
+  keyIdOf,
+  verifyAgainstCheckpoints,
+  verifyChain,
+} from "../kernel/audit.js";
+import { contactDigest, setTrustedContact, TrustedContactInput } from "../kernel/contacts.js";
+import {
+  completeRecoveryVerification,
   freezeOwner,
   setSubmissionsEnabled,
   startRecovery,
@@ -19,6 +31,7 @@ import {
   describeRequest,
   GrantProposal,
   grantsInvolving,
+  resumeBinding,
   previewGrant,
   requestMoreAccess,
   setGrant,
@@ -38,8 +51,17 @@ import {
   reviseIntent,
   UnsupportedAction,
 } from "../kernel/intents.js";
+import { noticesFor } from "../kernel/notify.js";
 import { KernelError } from "../kernel/registry.js";
 import {
+  createSession,
+  endAllSessions,
+  endSession,
+  resolveSession,
+  SESSION_COOKIE,
+} from "../kernel/sessions.js";
+import {
+  enrolBinding,
   registerPasskey,
   registrationOptions,
   type RelyingParty,
@@ -64,11 +86,15 @@ import {
   transactionsView,
 } from "../modules/finance/reads.js";
 
-const SESSION_TTL_MS = 12 * 3600 * 1000;
-
 export interface ServerOptions {
   rp: RelyingParty;
   devLogin: boolean;
+  // Pino options or false. Whatever is passed, secrets are redacted (see below).
+  logger?: boolean | { level?: string; stream?: { write(msg: string): void } };
+  // Built web assets to serve, with a strict Content-Security-Policy (production shape).
+  webRoot?: string;
+  // Public key that audit checkpoints must verify against; held outside the database.
+  auditPublicKey?: KeyObject;
 }
 
 declare module "fastify" {
@@ -88,12 +114,92 @@ const HTTP: Record<string, number> = {
   unknown_work_item_type: 400,
 };
 
+// Logs carry method, route and status only: never cookies, bodies or
+// query strings, which is where tokens, amounts and account IDs would be.
+const LOG_SERIALIZERS = {
+  req: (req: { method: string; routeOptions?: { url?: string } }) => ({
+    method: req.method,
+    route: req.routeOptions?.url,
+  }),
+  res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
+};
+
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 export async function buildServer(app: App, opts: ServerOptions) {
   const k = app.kernel;
-  const f = Fastify({ logger: false });
+  const f = Fastify({
+    logger: opts.logger
+      ? {
+          ...(typeof opts.logger === "object" ? opts.logger : {}),
+          serializers: LOG_SERIALIZERS,
+          redact: ["req.headers", "req.body", "req.query"],
+        }
+      : false,
+  });
   await f.register(cookie);
+  await f.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'self'"],
+        objectSrc: ["'none'"],
+      },
+    },
+    // Every asset is self-hosted, so the page can refuse cross-origin embeds entirely.
+    crossOriginEmbedderPolicy: { policy: "require-corp" },
+  });
+  // Financial data must never sit in a browser or proxy cache; the app shell
+  // is revalidated each time. Only content-hashed assets may be cached.
+  f.addHook("onSend", async (req, reply) => {
+    if (req.url.startsWith("/api/")) reply.header("cache-control", "no-store");
+    else if (req.url.startsWith("/assets/")) {
+      // Vite content-hashes these filenames, so a changed file is a new URL.
+      reply.header("cache-control", "public, max-age=31536000, immutable");
+    } else reply.header("cache-control", "no-cache");
+    reply.header(
+      "permissions-policy",
+      "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-get=(self), publickey-credentials-create=(self)",
+    );
+  });
+  await f.register(rateLimit, {
+    global: false,
+    keyGenerator: (req) => req.ip,
+    errorResponseBuilder: () => ({
+      statusCode: 429,
+      error: "rate_limited",
+      message: "Too many requests; wait a minute.",
+    }),
+  });
+  if (opts.webRoot) await f.register(fastifyStatic, { root: opts.webRoot });
 
-  f.setErrorHandler((err, _req, reply) => {
+  // Cross-site request forgery: besides SameSite=strict cookies, every
+  // state-changing API call must come from our own origin. Webhooks are
+  // exempt; they authenticate by signature, not cookie.
+  f.addHook("onRequest", async (req, reply) => {
+    if (
+      !MUTATING.has(req.method) ||
+      !req.url.startsWith("/api/") ||
+      req.url.startsWith("/api/webhooks/")
+    )
+      return;
+    const origin = req.headers.origin;
+    const site = req.headers["sec-fetch-site"];
+    if (origin !== opts.rp.origin && site !== "same-origin") {
+      return reply
+        .code(403)
+        .send({ error: "cross_origin", message: "request did not come from this site" });
+    }
+  });
+
+  f.setErrorHandler((err, req, reply) => {
     if (err instanceof UnsupportedAction) {
       return reply.code(422).send({ error: "unsupported", capability: err.capability });
     }
@@ -101,34 +207,29 @@ export async function buildServer(app: App, opts: ServerOptions) {
       return reply.code(HTTP[err.code] ?? 400).send({ error: err.code, message: err.message });
     if (err instanceof ZodError)
       return reply.code(400).send({ error: "invalid", message: z.prettifyError(err) });
-    const e = err as { statusCode?: number; message?: string };
+    const e = err as { statusCode?: number; message?: string; name?: string };
     if (e.statusCode && e.statusCode < 500)
       return reply.code(e.statusCode).send({ error: "bad_request", message: e.message });
-    console.error(err);
+    // Internals stay in the server log (by type, not payload); the client gets a code.
+    req.log.error({ errType: e.name }, "unhandled error");
     return reply.code(500).send({ error: "internal" });
   });
 
   // The actor always comes from the session, never from the request body.
   async function auth(req: FastifyRequest, reply: FastifyReply) {
-    const sid = req.cookies.sid;
-    const s = sid
-      ? await k.db
-          .selectFrom("session")
-          .selectAll()
-          .where("id", "=", sid)
-          .where("expires_at", ">", new Date())
-          .executeTakeFirst()
-      : undefined;
-    if (!s) return reply.code(401).send({ error: "unauthenticated" });
-    req.personId = s.person_id;
+    const personId = await resolveSession(k.db, req.cookies[SESSION_COOKIE]);
+    if (!personId) return reply.code(401).send({ error: "unauthenticated" });
+    req.personId = personId;
   }
+  const cookieOpts = { path: "/", httpOnly: true, sameSite: "strict" as const, secure: true };
+  const strict = (max: number) => ({ config: { rateLimit: { max, timeWindow: "1 minute" } } });
 
   // ---- identity -----------------------------------------------------------
   if (opts.devLogin) {
     f.get("/api/dev/people", async () =>
       FIXTURE_PEOPLE.map(({ id, display_name }) => ({ id, display_name })),
     );
-    f.post("/api/dev/login", async (req, reply) => {
+    f.post("/api/dev/login", strict(20), async (req, reply) => {
       const { personId } = z.object({ personId: z.string() }).parse(req.body);
       const p = await k.db
         .selectFrom("person")
@@ -136,11 +237,8 @@ export async function buildServer(app: App, opts: ServerOptions) {
         .where("id", "=", personId)
         .executeTakeFirst();
       if (!p) throw new KernelError("not_found", "not found");
-      const id = randomBytes(24).toString("base64url");
-      await k.db
-        .insertInto("session")
-        .values({ id, person_id: personId, expires_at: new Date(Date.now() + SESSION_TTL_MS) })
-        .execute();
+      // A fresh token on every sign-in; any previous cookie on this browser is replaced.
+      const token = await createSession(k.db, personId);
       await k.db.transaction().execute((tx) =>
         audit(tx, {
           actorId: personId,
@@ -149,14 +247,57 @@ export async function buildServer(app: App, opts: ServerOptions) {
           action: "session.dev_login",
         }),
       );
-      reply.setCookie("sid", id, { path: "/", httpOnly: true, sameSite: "strict" });
+      reply.setCookie(SESSION_COOKIE, token, cookieOpts);
       return { ok: true };
     });
+    // What would have been emailed about your own account (simulated delivery).
+    f.get("/api/dev/outbox", { preHandler: auth }, async (req) =>
+      k.db
+        .selectFrom("notification")
+        .select(["recipient_email", "kind", "message", "created_at"])
+        .where("recipient_email", "is not", null)
+        .where("owner_id", "=", req.personId)
+        .orderBy("created_at", "desc")
+        .limit(50)
+        .execute(),
+    );
   }
 
   f.post("/api/logout", { preHandler: auth }, async (req, reply) => {
-    await k.db.deleteFrom("session").where("id", "=", req.cookies.sid!).execute();
-    reply.clearCookie("sid", { path: "/" });
+    await endSession(k.db, req.cookies[SESSION_COOKIE]!);
+    reply.clearCookie(SESSION_COOKIE, cookieOpts);
+    return { ok: true };
+  });
+  f.post("/api/sessions/end-all", { preHandler: auth }, async (req, reply) => {
+    await endAllSessions(k.db, req.personId);
+    reply.clearCookie(SESSION_COOKIE, cookieOpts);
+    return { ok: true };
+  });
+
+  f.get("/api/notifications", { preHandler: auth }, async (req) => noticesFor(k.db, req.personId));
+  f.get(
+    "/api/trusted-contact",
+    { preHandler: auth },
+    async (req) =>
+      (await k.db
+        .selectFrom("trusted_contact")
+        .select(["name", "email"])
+        .where("owner_id", "=", req.personId)
+        .executeTakeFirst()) ?? null,
+  );
+  f.post("/api/trusted-contact/options", { preHandler: auth, ...strict(20) }, async (req) => {
+    const c = TrustedContactInput.parse(req.body);
+    return stepUpOptions(
+      k,
+      opts.rp,
+      req.personId,
+      "grant",
+      contactDigest(req.personId, { ...c, email: c.email.toLowerCase() }),
+    );
+  });
+  f.post("/api/trusted-contact", { preHandler: auth, ...strict(20) }, async (req) => {
+    const b = z.object({ contact: TrustedContactInput, stepUp: z.unknown() }).parse(req.body);
+    await setTrustedContact(k, req.personId, b.contact, b.stepUp);
     return { ok: true };
   });
 
@@ -188,8 +329,17 @@ export async function buildServer(app: App, opts: ServerOptions) {
     };
   });
 
-  f.post("/api/passkeys/options", { preHandler: auth }, async (req) =>
-    registrationOptions(k, opts.rp, req.personId),
+  // Adding a passkey with one already enrolled needs an assertion from it first.
+  f.post("/api/passkeys/enrol-options", { preHandler: auth, ...strict(20) }, async (req) =>
+    stepUpOptions(k, opts.rp, req.personId, "enrol", enrolBinding(req.personId)),
+  );
+  f.post("/api/passkeys/options", { preHandler: auth, ...strict(20) }, async (req) =>
+    registrationOptions(
+      k,
+      opts.rp,
+      req.personId,
+      (req.body as { stepUp?: unknown } | undefined)?.stepUp,
+    ),
   );
   f.post("/api/passkeys", { preHandler: auth }, async (req) => {
     await registerPasskey(k, opts.rp, req.personId, req.body as never);
@@ -296,22 +446,36 @@ export async function buildServer(app: App, opts: ServerOptions) {
   // ---- grants ---------------------------------------------------------------
   f.get("/api/grants", { preHandler: auth }, async (req) => grantsInvolving(k.db, req.personId));
   // Preview and the passkey options are issued together, bound to the same digest.
-  f.post("/api/grants/preview", { preHandler: auth }, async (req) => {
+  f.post("/api/grants/preview", { preHandler: auth, ...strict(20) }, async (req) => {
     const proposal = GrantProposal.parse(req.body);
     const preview = await previewGrant(k, req.personId, proposal);
     const options = await stepUpOptions(k, opts.rp, req.personId, "grant", preview.digest);
     return { preview, options };
   });
-  f.post("/api/delegation-grants", { preHandler: auth }, async (req) => {
+  f.post("/api/delegation-grants", { preHandler: auth, ...strict(20) }, async (req) => {
     const b = z.object({ proposal: GrantProposal, stepUp: z.unknown() }).parse(req.body);
     return setGrant(k, req.personId, b.proposal, b.stepUp);
   });
   f.post("/api/delegation-grants/:id/status", { preHandler: auth }, async (req) => {
-    const { status } = z
-      .object({ status: z.enum(["active", "paused", "revoked"]) })
+    const { status, stepUp } = z
+      .object({ status: z.enum(["active", "paused", "revoked"]), stepUp: z.unknown().optional() })
       .parse(req.body);
-    return setGrantStatus(k, req.personId, (req.params as { id: string }).id, status);
+    return setGrantStatus(k, req.personId, (req.params as { id: string }).id, status, stepUp);
   });
+  f.post(
+    "/api/delegation-grants/:id/resume-options",
+    { preHandler: auth, ...strict(20) },
+    async (req) => {
+      const g = await k.db
+        .selectFrom("delegation_grant")
+        .select(["id", "version"])
+        .where("id", "=", (req.params as { id: string }).id)
+        .where("grantor_id", "=", req.personId)
+        .executeTakeFirst();
+      if (!g) throw new KernelError("not_found", "not found");
+      return stepUpOptions(k, opts.rp, req.personId, "grant", resumeBinding(g.id, g.version));
+    },
+  );
   f.delete("/api/delegation-grants/:id", { preHandler: auth }, async (req) =>
     setGrantStatus(k, req.personId, (req.params as { id: string }).id, "revoked"),
   );
@@ -351,7 +515,7 @@ export async function buildServer(app: App, opts: ServerOptions) {
     const options = await stepUpOptions(k, opts.rp, req.personId, "grant", preview.digest);
     return { ...d, preview, options };
   });
-  f.post("/api/grant-requests/:id/accept", { preHandler: auth }, async (req) => {
+  f.post("/api/grant-requests/:id/accept", { preHandler: auth, ...strict(20) }, async (req) => {
     const id = (req.params as { id: string }).id;
     const { stepUp } = z.object({ stepUp: z.unknown() }).parse(req.body);
     const d = await describeRequest(k, req.personId, id);
@@ -435,23 +599,27 @@ export async function buildServer(app: App, opts: ServerOptions) {
     await requestApproval(k, req.personId, (req.params as { id: string }).id);
     return { ok: true };
   });
-  f.post("/api/payment-intents/:id/approval-options", { preHandler: auth }, async (req) => {
-    const view = await approvalOptions(k, req.personId, (req.params as { id: string }).id);
-    const creds = await k.db
-      .selectFrom("webauthn_credential")
-      .select("id")
-      .where("person_id", "=", req.personId)
-      .execute();
-    if (!creds.length) throw new KernelError("stepup_required", "set up a passkey first");
-    const options = await generateAuthenticationOptions({
-      rpID: opts.rp.id,
-      challenge: Buffer.from(view.challenge, "base64url"),
-      allowCredentials: creds.map((c) => ({ id: c.id })),
-      userVerification: "required",
-    });
-    return { ...view, challenge: undefined, options };
-  });
-  f.post("/api/payment-intents/:id/approvals", { preHandler: auth }, async (req) => {
+  f.post(
+    "/api/payment-intents/:id/approval-options",
+    { preHandler: auth, ...strict(20) },
+    async (req) => {
+      const view = await approvalOptions(k, req.personId, (req.params as { id: string }).id);
+      const creds = await k.db
+        .selectFrom("webauthn_credential")
+        .select("id")
+        .where("person_id", "=", req.personId)
+        .execute();
+      if (!creds.length) throw new KernelError("stepup_required", "set up a passkey first");
+      const options = await generateAuthenticationOptions({
+        rpID: opts.rp.id,
+        challenge: Buffer.from(view.challenge, "base64url"),
+        allowCredentials: creds.map((c) => ({ id: c.id })),
+        userVerification: "required",
+      });
+      return { ...view, challenge: undefined, options };
+    },
+  );
+  f.post("/api/payment-intents/:id/approvals", { preHandler: auth, ...strict(20) }, async (req) => {
     const b = z
       .object({ revision: z.number().int(), digest: z.string(), stepUp: z.unknown() })
       .parse(req.body);
@@ -482,7 +650,7 @@ export async function buildServer(app: App, opts: ServerOptions) {
     scope.addContentTypeParser("application/json", { parseAs: "string" }, (_req, body, done) =>
       done(null, body),
     );
-    scope.post("/api/webhooks/:provider", async (req, reply) => {
+    scope.post("/api/webhooks/:provider", strict(600), async (req, reply) => {
       const headers = Object.fromEntries(
         Object.entries(req.headers).map(([h, v]) => [h, Array.isArray(v) ? v[0] : v]),
       );
@@ -506,12 +674,17 @@ export async function buildServer(app: App, opts: ServerOptions) {
     await freezeOwner(k, req.personId, req.personId, reason);
     return { ok: true };
   });
-  f.post("/api/unfreeze/options", { preHandler: auth }, async (req) =>
+  f.post("/api/unfreeze/options", { preHandler: auth, ...strict(20) }, async (req) =>
     stepUpOptions(k, opts.rp, req.personId, "recovery", `unfreeze:${req.personId}`),
   );
-  f.post("/api/unfreeze", { preHandler: auth }, async (req) => {
+  f.post("/api/unfreeze", { preHandler: auth, ...strict(20) }, async (req) => {
     const { stepUp } = z.object({ stepUp: z.unknown() }).parse(req.body);
     await unfreezeOwner(k, req.personId, stepUp);
+    return { ok: true };
+  });
+  f.post("/api/support/recovery-verified", { preHandler: auth }, async (req) => {
+    const { ownerId } = z.object({ ownerId: z.string() }).parse(req.body);
+    await completeRecoveryVerification(k, req.personId, ownerId);
     return { ok: true };
   });
   f.get("/api/support/overview", { preHandler: auth }, async (req) =>
@@ -532,8 +705,20 @@ export async function buildServer(app: App, opts: ServerOptions) {
     const support = await isSupport(k.db, req.personId);
     const records = await exportAudit(k.db, support ? undefined : req.personId);
     reply.header("content-type", "application/x-ndjson");
-    if (support) reply.header("x-audit-chain", verifyChain(records).ok ? "verified" : "BROKEN");
-    return records.map((r) => JSON.stringify(r)).join("\n") + "\n";
+    if (support) {
+      const result = opts.auditPublicKey
+        ? verifyAgainstCheckpoints(
+            await exportAudit(k.db),
+            await exportCheckpoints(k.db),
+            new Map([[keyIdOf(opts.auditPublicKey), opts.auditPublicKey]]),
+          )
+        : verifyChain(records);
+      reply.header("x-audit-chain", result.ok ? "verified" : "BROKEN");
+    }
+    // Support gets who did what and when, not the details (amounts, limits,
+    // payees). Verification above ran over the full rows on the server.
+    const rows = support ? records.map((r) => ({ ...r, detail: {} })) : records;
+    return rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
   });
 
   // ---- R0 simulator controls (never present outside the demonstrator) ------
@@ -554,6 +739,14 @@ export async function buildServer(app: App, opts: ServerOptions) {
           state: z.enum(["delivered", "posted", "returned", "failed"]),
         })
         .parse(req.body);
+      const intent = await k.db
+        .selectFrom("intent")
+        .select(["owner_id", "initiator_id"])
+        .where("id", "=", b.intentId)
+        .executeTakeFirst();
+      if (!intent || (intent.owner_id !== req.personId && intent.initiator_id !== req.personId)) {
+        throw new KernelError("not_found", "not found");
+      }
       const att = await k.db
         .selectFrom("execution_attempt")
         .selectAll()

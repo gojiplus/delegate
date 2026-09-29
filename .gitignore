@@ -5,3 +5,4 @@ playwright-report/
 test-results/
 audit-export/
 .DS_Store
+.familyops/

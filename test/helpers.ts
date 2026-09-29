@@ -3,11 +3,17 @@ import { sql } from "kysely";
 import pg from "pg";
 import { inject } from "vitest";
 import { type App, buildApp } from "../src/app.js";
-import type { Tx } from "../src/db/index.js";
-import { grantDigest, type GrantProposal, setGrant } from "../src/kernel/grants.js";
+import { createDb, type Db, type Tx } from "../src/db/index.js";
+import {
+  grantDigest,
+  type GrantProposal,
+  resumeBinding,
+  setGrant,
+  setGrantStatus,
+} from "../src/kernel/grants.js";
 import { approvalOptions, approveIntent } from "../src/kernel/intents.js";
 import type { Kernel } from "../src/kernel/context.js";
-import { issueChallenge, type StepUpVerifier } from "../src/kernel/stepup.js";
+import { issueChallenge, type StepUpPurpose, type StepUpVerifier } from "../src/kernel/stepup.js";
 import { connectInstitution, selectAccounts } from "../src/modules/finance/connections.js";
 import { FIXTURE_PEOPLE } from "../src/modules/finance/fixtures.js";
 
@@ -24,28 +30,40 @@ export const fakeStepUp: StepUpVerifier = {
   },
 };
 
-export async function freshApp(): Promise<App & { url: string }> {
-  const admin = inject("pgAdminUrl");
+export type TestApp = App & { url: string; admin: Db };
+
+export async function freshApp(): Promise<TestApp> {
+  const adminUrl = inject("pgAdminUrl");
   const name = `t_${randomBytes(6).toString("hex")}`;
-  const c = new pg.Client({ connectionString: admin });
+  const c = new pg.Client({ connectionString: adminUrl });
   await c.connect();
   await c.query(`create database ${name} template familyops_template`);
   await c.end();
-  const url = new URL(admin);
+  const url = new URL(adminUrl);
   url.pathname = `/${name}`;
   const app = buildApp({ databaseUrl: url.toString(), stepUp: fakeStepUp, fakepaySecret: SECRET });
-  await app.kernel.db.insertInto("person").values(FIXTURE_PEOPLE).execute();
-  await app.kernel.db
+  // The app runs as the least-privilege role; tests inspect with an owner connection.
+  const admin = createDb(url.toString());
+  await admin.insertInto("person").values(FIXTURE_PEOPLE).execute();
+  await admin
     .insertInto("staff_role")
     .values({ person_id: "p_support", role: "support" })
     .execute();
-  return { ...app, url: url.toString() };
+  return {
+    ...app,
+    url: url.toString(),
+    admin,
+    close: async () => {
+      await app.close();
+      await admin.destroy();
+    },
+  };
 }
 
 export async function signed(
   k: Kernel,
   personId: string,
-  purpose: "grant" | "approve" | "recovery",
+  purpose: StepUpPurpose,
   digest: string | null,
   signer = personId,
 ) {
@@ -97,10 +115,26 @@ export function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function jobs(k: Kernel, task: string) {
+export async function jobs(app: TestApp, task: string) {
   const r = await sql<{ key: string | null; run_at: Date }>`
     select key, run_at from graphile_worker.jobs where task_identifier = ${task} order by id`.execute(
-    k.db,
+    app.admin,
   );
   return r.rows;
+}
+
+// Resuming a paused grant needs the grantor's passkey over this grant's current version.
+export async function resume(k: Kernel, grantorId: string, grantId: string) {
+  const g = await k.db
+    .selectFrom("delegation_grant")
+    .select("version")
+    .where("id", "=", grantId)
+    .executeTakeFirstOrThrow();
+  return setGrantStatus(
+    k,
+    grantorId,
+    grantId,
+    "active",
+    await signed(k, grantorId, "grant", resumeBinding(grantId, g.version)),
+  );
 }

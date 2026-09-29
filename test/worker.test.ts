@@ -27,7 +27,7 @@ describe("graphile-worker", () => {
     expect(await status(s, lost)).toBe("Reconciling");
     // Pull the scheduled reconcile forward instead of waiting for its backoff.
     await sql`update graphile_worker._private_jobs set run_at = now() where key = ${`reconcile:${lost}`}`.execute(
-      s.app.kernel.db,
+      s.app.admin,
     );
     await runOnce({ connectionString: url, taskList: tasks });
     expect(await status(s, lost)).toBe("Submitted");

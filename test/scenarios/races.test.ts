@@ -65,9 +65,9 @@ describe("races", () => {
         // Dispatch won: the grant was live when the gate committed, and the
         // owner's timeline says the payment was already in flight.
         expect(revokeEvent!.reason).toContain("Access revoked while this was already in flight");
-        expect(
-          (await jobs(s.app.kernel, "cancel_in_flight")).some((j) => j.key === `cancel:${id}`),
-        ).toBe(true);
+        expect((await jobs(s.app, "cancel_in_flight")).some((j) => j.key === `cancel:${id}`)).toBe(
+          true,
+        );
         const dispatching = events.find((e) => e.to_status === "Dispatching")!;
         expect(dispatching.id < revokeEvent!.id).toBe(true);
         outcomes.dispatchedFirst++;

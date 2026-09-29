@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, type KeyObject, sign, verify } from "node:crypto";
 import { sql } from "kysely";
 import type { Db, Tx } from "../db/index.js";
 import { canonicalJson } from "./canonical.js";
@@ -91,4 +91,79 @@ export function verifyChain(records: AuditRecord[]): { ok: true } | { ok: false;
     prev = r.hash;
   }
   return { ok: true };
+}
+
+// Signed checkpoints. The hash chain shows an export is internally
+// consistent, but someone with write access to the database could rewrite a
+// row and recompute every hash after it. A checkpoint signs the chain head with
+// a key the database never holds; the public key lives outside it. A rewrite
+// before a checkpoint then no longer matches that checkpoint's signature.
+
+export interface Checkpoint {
+  seq: string;
+  hash: string;
+  at: string;
+  key_id: string;
+  signature: string;
+}
+
+export interface AuditSigner {
+  keyId: string;
+  privateKey: KeyObject;
+}
+
+const checkpointBody = (c: Pick<Checkpoint, "seq" | "hash" | "at" | "key_id">) =>
+  canonicalJson({ seq: c.seq, hash: c.hash, at: c.at, key_id: c.key_id });
+
+export function keyIdOf(publicKey: KeyObject): string {
+  return createHash("sha256")
+    .update(publicKey.export({ type: "spki", format: "der" }))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+export async function writeCheckpoint(db: Db, signer: AuditSigner): Promise<Checkpoint | null> {
+  const head = await db
+    .selectFrom("audit_event")
+    .select(["seq", "hash"])
+    .orderBy("seq", "desc")
+    .limit(1)
+    .executeTakeFirst();
+  if (!head) return null;
+  const c = { seq: head.seq, hash: head.hash, at: new Date().toISOString(), key_id: signer.keyId };
+  const signature = sign(null, Buffer.from(checkpointBody(c)), signer.privateKey).toString(
+    "base64",
+  );
+  await db
+    .insertInto("audit_checkpoint")
+    .values({ ...c, signature })
+    .onConflict((oc) => oc.column("seq").doNothing())
+    .execute();
+  return { ...c, signature };
+}
+
+// Verifies a full export against checkpoints, trusting only the given public keys.
+export function verifyAgainstCheckpoints(
+  records: AuditRecord[],
+  checkpoints: Checkpoint[],
+  trustedKeys: Map<string, KeyObject>,
+): { ok: true } | { ok: false; reason: string } {
+  const chain = verifyChain(records);
+  if (!chain.ok) return { ok: false, reason: `chain broken at ${chain.seq}` };
+  for (const c of checkpoints) {
+    const key = trustedKeys.get(c.key_id);
+    if (!key) return { ok: false, reason: `untrusted key ${c.key_id}` };
+    if (!verify(null, Buffer.from(checkpointBody(c)), key, Buffer.from(c.signature, "base64"))) {
+      return { ok: false, reason: `bad signature on checkpoint ${c.seq}` };
+    }
+    const r = records.find((x) => x.seq === c.seq);
+    if (!r || r.hash !== c.hash)
+      return { ok: false, reason: `history before ${c.seq} was rewritten` };
+  }
+  return { ok: true };
+}
+
+export async function exportCheckpoints(db: Db): Promise<Checkpoint[]> {
+  const rows = await db.selectFrom("audit_checkpoint").selectAll().orderBy("seq").execute();
+  return rows.map((r) => ({ ...r, at: r.at.toISOString() }));
 }

@@ -5,6 +5,7 @@ import { audit } from "./audit.js";
 import { digestOf } from "./canonical.js";
 import type { Kernel } from "./context.js";
 import { newId } from "./ids.js";
+import { notify } from "./notify.js";
 import { enqueue } from "./jobs.js";
 import { UNDISPATCHED, isTerminal, transition } from "./lifecycle.js";
 import { type Capability, type IntentTypeDef, KernelError } from "./registry.js";
@@ -84,6 +85,28 @@ export async function prepareIntent(
   const ownerId = await ownerOf(k.db, resourceIds);
   const cap = await def.capability(k.db, ownerId, details);
   if (cap.state !== "executable") throw new UnsupportedAction(cap);
+  // A payment can only settle a bill that belongs to the same owner, sits on an
+  // account the payment touches, and that the preparer can see. Otherwise a
+  // delegate could mark anyone's bill "verified paid" with a token payment.
+  if (input.workItemId) {
+    const w = await k.db
+      .selectFrom("work_item")
+      .selectAll()
+      .where("id", "=", input.workItemId)
+      .executeTakeFirst();
+    const ok =
+      w &&
+      w.owner_id === ownerId &&
+      resourceIds.includes(w.resource_id) &&
+      (await canAccess(
+        k.db,
+        k.registry,
+        actorId,
+        k.registry.workItemType(w.type).scope,
+        w.resource_id,
+      ));
+    if (!ok) throw new KernelError("not_found", "not found");
+  }
 
   // Repeated clicks and client retries carry the same key and return the same intent.
   const idempotencyKey = `${actorId}:${clientKey}`;
@@ -175,7 +198,12 @@ export async function reviseIntent(
     const details = def.details.parse(rawDetails);
     const resourceIds = def.resourcesOf(details);
     const prev = await currentRevision(tx, intentId, i.current_revision);
+    // Only the person who prepared it, or the owner, may change it. A delegate
+    // rewriting the owner's own draft would escape every delegate control:
+    // limits, revocation, attribution and the trusted contact's notice.
+    const mayChange = actorId === i.owner_id || actorId === i.initiator_id;
     if (
+      !mayChange ||
       !(await mayPrepare(tx, k, actorId, def, [...new Set([...resourceIds, ...prev.resource_ids])]))
     ) {
       throw new KernelError("not_found", "not found");
@@ -234,8 +262,11 @@ export async function requestApproval(k: Kernel, actorId: string, intentId: stri
     const i = await lockIntent(tx, intentId);
     const def = k.registry.intentType(i.type);
     const rev = await currentRevision(tx, intentId, i.current_revision);
-    if (!(await mayPrepare(tx, k, actorId, def, rev.resource_ids)))
+    const mayAsk = actorId === i.owner_id || actorId === i.initiator_id;
+    if (!mayAsk || !(await mayPrepare(tx, k, actorId, def, rev.resource_ids)))
       throw new KernelError("not_found", "not found");
+    // Only a draft can be sent for approval; an approved payment can't be pulled back this way.
+    if (i.status !== "Draft") throw new KernelError("conflict", `intent is ${i.status}`);
     await transition(tx, k.registry, {
       intentId,
       from: i.status,
@@ -243,6 +274,15 @@ export async function requestApproval(k: Kernel, actorId: string, intentId: stri
       actorId,
       actorKind: "person",
     });
+    if (actorId !== i.owner_id) {
+      await notify(tx, {
+        ownerId: i.owner_id,
+        kind: "intent.approval_requested",
+        message:
+          "A payment is waiting for your approval. Open FamilyOps yourself to review it; approving always needs your passkey.",
+        toOwner: true,
+      });
+    }
     await audit(tx, {
       actorId,
       actorKind: "person",
@@ -298,12 +338,16 @@ export async function approveIntent(
   digest: string,
   stepUpResponse: unknown,
 ): Promise<void> {
+  // Expiry is committed on its own so that refusing the approval doesn't roll it back.
+  const expired = await k.db.transaction().execute(async (tx) => {
+    const i = await lockIntent(tx, intentId);
+    return i.owner_id === actorId && (await expireIfStale(tx, k, i));
+  });
+  if (expired) throw new KernelError("conflict", "approval request expired");
   await k.db.transaction().execute(async (tx) => {
     const i = await lockIntent(tx, intentId);
     // Support staff and delegates are refused here regardless of anything else (P12).
     if (i.owner_id !== actorId) throw new KernelError("forbidden", "only the owner can approve");
-    if (await expireIfStale(tx, k, i))
-      throw new KernelError("conflict", "approval request expired");
     if (i.status !== "AwaitingApproval") throw new KernelError("conflict", `intent is ${i.status}`);
     if (revision !== i.current_revision)
       throw new KernelError("conflict", "a newer revision exists");
@@ -353,12 +397,17 @@ export async function approveIntent(
       actorKind: "person",
       detail: { revision, digest: rev.digest },
     });
-    await enqueue(
-      tx,
-      "dispatch",
-      { intentId },
-      { runAt: def.dispatchAt(details), jobKey: `dispatch:${intentId}` },
-    );
+    await enqueue(tx, "dispatch", { intentId }, { runAt: def.dispatchAt(details) });
+    const summary = (await def.describe(tx, details)).summary;
+    await notify(tx, {
+      ownerId: i.owner_id,
+      kind: "intent.approved",
+      message: `You approved ${summary}. If this wasn't you, stop all payments and contact support.`,
+      toOwner: true,
+      // The independent contact hears about payments someone else prepared.
+      toTrustedContact: i.initiator_id !== i.owner_id,
+      toPeople: i.initiator_id !== i.owner_id ? [i.initiator_id] : [],
+    });
     await audit(tx, {
       actorId,
       actorKind: "person",
@@ -421,7 +470,7 @@ export async function cancelIntent(k: Kernel, actorId: string, intentId: string)
         actorKind: "person",
       });
     } else {
-      await enqueue(tx, "cancel_in_flight", { intentId }, { jobKey: `cancel:${intentId}` });
+      await enqueue(tx, "cancel_in_flight", { intentId });
     }
     await audit(tx, {
       actorId,
@@ -449,7 +498,11 @@ export async function intentView(k: Kernel, actorId: string, intentId: string) {
   const details = def.details.parse(rev.details);
   const [description, warnings, capability, events, approval, attempt, people] = await Promise.all([
     def.describe(k.db, details),
-    def.warnings(k.db, i.owner_id, intentId, details),
+    // Warnings draw on balances, other payments and card activity: owner only,
+    // or a prepare-only delegate could read the balance by probing amounts.
+    i.owner_id === actorId
+      ? def.warnings(k.db, i.owner_id, intentId, details)
+      : Promise.resolve([]),
     def.capability(k.db, i.owner_id, details),
     k.db
       .selectFrom("intent_event")

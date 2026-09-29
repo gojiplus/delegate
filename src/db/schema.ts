@@ -10,9 +10,34 @@ type Json<T extends object | null = Record<string, unknown>> = JSONColumnType<T,
 type BigCents = ColumnType<string, string | number | bigint, string | number | bigint>;
 
 export interface Database {
-  person: { id: string; display_name: string; email: string; created_at: Generated<Date> };
+  person: {
+    id: string;
+    display_name: string;
+    email: string;
+    created_at: Generated<Date>;
+    enrolment_open_until: NullableTimestamp;
+    recovery_started_at: NullableTimestamp;
+  };
   staff_role: { person_id: string; role: "support" };
-  session: { id: string; person_id: string; created_at: Generated<Date>; expires_at: Timestamp };
+  session: {
+    token_hash: string;
+    person_id: string;
+    created_at: Generated<Date>;
+    expires_at: Timestamp;
+    last_seen_at: Generated<Date>;
+  };
+  trusted_contact: { owner_id: string; name: string; email: string; created_at: Generated<Date> };
+  notification: {
+    id: string;
+    recipient_person_id: string | null;
+    recipient_email: string | null;
+    owner_id: string;
+    kind: string;
+    message: string;
+    created_at: Generated<Date>;
+    delivered_at: NullableTimestamp;
+  };
+  audit_checkpoint: { seq: string; hash: string; at: Timestamp; key_id: string; signature: string };
   webauthn_credential: {
     id: string;
     person_id: string;

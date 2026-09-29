@@ -1,10 +1,9 @@
-import type { App } from "../../src/app.js";
 import { prepareIntent, requestApproval } from "../../src/kernel/intents.js";
 import { newId } from "../../src/kernel/ids.js";
-import { approve, connectAll, freshApp, grant, today } from "../helpers.js";
+import { approve, connectAll, freshApp, grant, today, type TestApp } from "../helpers.js";
 
 export interface Scenario {
-  app: App & { url: string };
+  app: TestApp;
   maria: Record<string, string>;
   grantId: string;
 }
@@ -73,7 +72,7 @@ export async function status(s: Scenario, intentId: string) {
 }
 
 export async function providerOps(s: Scenario, intentId: string) {
-  return s.app.kernel.db
+  return s.app.admin
     .selectFrom("fakepay.operation")
     .selectAll()
     .where("idempotency_key", "=", intentId)

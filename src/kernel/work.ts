@@ -125,6 +125,11 @@ export async function updateWorkItem(
       throw new KernelError("not_found", "not found");
     }
     if (w.status === "verified_done") throw new KernelError("conflict", "already verified");
+    // Only the owner can dismiss: a dismissed bill disappears for everyone, so
+    // a delegate dismissing one would hide it from the owner.
+    if (change.status === "dismissed" && actorId !== w.owner_id) {
+      throw new KernelError("forbidden", "only the owner can dismiss this");
+    }
     if (change.assigneeId) {
       const assigneeOk =
         change.assigneeId === w.owner_id ||

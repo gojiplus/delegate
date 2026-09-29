@@ -1,0 +1,4 @@
+# ZAP rule overrides: id	IGNORE|WARN|FAIL	(reason)
+# Default: every alert fails the build except those listed here.
+10109	IGNORE	(Informational: detects that this is a single-page app; not a vulnerability)
+10049	IGNORE	(The app shell is deliberately no-cache so it always revalidates; API no-store is enforced by test/security.test.ts)
