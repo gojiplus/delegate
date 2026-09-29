@@ -1,6 +1,6 @@
 import { run } from "graphile-worker";
 import { buildApp } from "../app.js";
-import { config } from "../config.js";
+import { config, webhookSecret } from "../config.js";
 import { KernelError } from "../kernel/registry.js";
 import { taskList } from "./tasks.js";
 
@@ -14,7 +14,7 @@ const app = buildApp({
       throw new KernelError("forbidden", "the worker cannot authenticate as anyone");
     },
   },
-  fakepaySecret: config.fakepayWebhookSecret,
+  fakepaySecret: webhookSecret(),
 });
 const runner = await run({
   connectionString: config.databaseUrl,

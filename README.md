@@ -105,20 +105,34 @@ Webhooks are checked for a valid signature and deduplicated in an inbox. When on
 provider's current state is fetched and used instead. A bill counts as verified only when the card issuer
 confirms it posted. If the payment is later returned, the bill reopens and the monthly limit is given back.
 
-## Running it
+## Try it
 
-Requires Node ≥ 22.18 and Postgres 17.
+Requires Node ≥ 22.18 and any Postgres 17.
 
 ```sh
 npm ci
-make db-up            # Postgres in Docker on :54329, or set DATABASE_URL to your own
-make migrate seed
-make dev              # api :8787, worker, web http://localhost:5173
+make db-up                                   # Postgres in Docker on :54329, or skip this and…
+export DATABASE_URL=postgres://…/familyops   # …point at any Postgres 17 you have
+make demo                                    # wipes that database, seeds it, runs everything
 ```
 
-Choose a person on the first screen. Approving a payment needs a passkey: Touch ID and Windows Hello both
-work on `localhost`. To regenerate the screenshots, run `npx tsx src/scripts/walkthrough.ts` against a
-freshly seeded database.
+Open http://localhost:5173. Approving a payment needs a passkey; Touch ID or Windows Hello works on `localhost`. Use
+**Switch person** to move between people. Things to try, and what should happen:
+
+1. **As Maria:** set up a passkey. Choose her checking, savings and Visa, then **Share with someone**, picking Sam, "Prepare payments" and a $1,000 per-payment limit.
+   _Expected:_ the preview lists exactly what Sam will be able to do, and the joint account can't be picked.
+2. **As Sam:** under "Helping Maria", prepare a payment for the Summit Visa statement. Then change "Pay to" to Maria's savings.
+   _Expected:_ the Visa is sendable; the savings transfer is refused with its reason.
+3. **As Maria:** open the waiting payment and **Approve with passkey**. Under "Simulate the payment provider", report _delivered_, then _posted_.
+   _Expected:_ the timeline shows each step, and the bill becomes "Paid: confirmed by the card issuer".
+4. **Break it on purpose.**
+   - Before approving another payment, choose **Lose the next response**. _Expected:_ "Checking with provider", then "Sent", and still only one payment.
+   - Edit a payment after approving it. _Expected:_ it asks for approval again.
+5. **As Maria:** revoke Sam. **As Sam:** reload. _Expected:_ everything of Maria's is gone.
+6. **As Tom (Maria's husband):** _Expected:_ nothing of hers is visible.
+   **As Riley (support):** pause submissions. _Expected:_ Riley can't approve anything, and paused payments show "Held".
+
+If something differs from what's described here, that's a bug. Please report it.
 
 ## Tests
 

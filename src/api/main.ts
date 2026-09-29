@@ -1,5 +1,5 @@
 import { buildApp } from "../app.js";
-import { config } from "../config.js";
+import { config, webhookSecret } from "../config.js";
 import { passkeyVerifier } from "../kernel/webauthn.js";
 import { buildServer } from "./server.js";
 
@@ -7,7 +7,7 @@ const rp = { id: config.rpId, name: "FamilyOps (R0 demonstrator)", origin: confi
 const app = buildApp({
   databaseUrl: config.databaseUrl,
   stepUp: passkeyVerifier(rp),
-  fakepaySecret: config.fakepayWebhookSecret,
+  fakepaySecret: webhookSecret(),
 });
 const server = await buildServer(app, { rp, devLogin: config.devLogin });
 await server.listen({ port: config.apiPort, host: "127.0.0.1" });

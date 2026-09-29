@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import { buildApp } from "../app.js";
-import { config } from "../config.js";
+import { config, webhookSecret } from "../config.js";
 import { audit } from "../kernel/audit.js";
 import { newId } from "../kernel/ids.js";
 import { addPayee, connectInstitution, selectAccounts } from "../modules/finance/connections.js";
@@ -14,7 +14,7 @@ import { FIXTURE_PEOPLE } from "../modules/finance/fixtures.js";
 const app = buildApp({
   databaseUrl: config.databaseUrl,
   stepUp: { challengeOf: () => null, verify: async () => ({}) },
-  fakepaySecret: config.fakepayWebhookSecret,
+  fakepaySecret: webhookSecret(),
 });
 const { kernel: k } = app;
 

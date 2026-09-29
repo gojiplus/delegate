@@ -144,6 +144,49 @@ function Simulator({ v, onDone }: { v: IntentView; onDone: () => void }) {
   );
 }
 
+// Changing anything creates a new revision; any earlier approval stops applying.
+function ChangeAmount({ v, onDone }: { v: IntentView; onDone: () => void }) {
+  const [dollars, setDollars] = useState((v.revision.details.amount.cents / 100).toFixed(2));
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <details>
+      <summary>Change the amount</summary>
+      <p className="soft small">
+        {v.status === "Scheduled"
+          ? "It is already approved; changing it will need a new approval."
+          : ""}
+      </p>
+      <div className="row">
+        <label>
+          Amount in dollars{" "}
+          <input inputMode="decimal" value={dollars} onChange={(e) => setDollars(e.target.value)} />
+        </label>
+        <button
+          className="quiet"
+          onClick={async () => {
+            try {
+              const details = {
+                ...v.revision.details,
+                amount: { currency: "USD", cents: Math.round(Number(dollars) * 100) },
+              };
+              await api("PUT", `/api/payment-intents/${v.id}/revisions`, {
+                expectedRevision: v.revision.number,
+                details,
+              });
+              onDone();
+            } catch (e) {
+              setErr(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        >
+          Save change
+        </button>
+      </div>
+      {err && <p className="error">{err}</p>}
+    </details>
+  );
+}
+
 export function IntentPage({ me, id }: { me: Me; id: string }) {
   const v = useLoad<IntentView>(`/api/payment-intents/${id}`);
   if (v.error)
@@ -163,6 +206,9 @@ export function IntentPage({ me, id }: { me: Me; id: string }) {
         <a href="#/">Back</a>
       </p>
       <Slip v={d} me={me} onDone={() => void v.reload()} />
+      {["Draft", "AwaitingApproval", "Scheduled"].includes(d.status) && (
+        <ChangeAmount key={d.revision.number} v={d} onDone={() => void v.reload()} />
+      )}
       {cancellable && d.status !== "AwaitingApproval" && (
         <p>
           <button

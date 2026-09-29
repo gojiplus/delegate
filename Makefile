@@ -1,4 +1,4 @@
-.PHONY: help install db-up db-reset migrate seed dev lint typecheck format test ci ci-docker
+.PHONY: help install db-up db-reset demo migrate seed dev lint typecheck format test ci ci-docker
 
 DATABASE_URL ?= postgres://familyops:familyops@localhost:54329/familyops
 export DATABASE_URL
@@ -7,6 +7,7 @@ help:
 	@echo "install     npm ci"
 	@echo "db-up       start Postgres 17 in Docker (port 54329)"
 	@echo "db-reset    drop and recreate the demo database, migrate, seed"
+	@echo "demo        reset, seed and run everything; set DATABASE_URL to any Postgres 17"
 	@echo "dev         run api, worker and web (http://localhost:5173)"
 	@echo "ci          typecheck, lint, format check, tests (TEST_PG_URL or Docker for Postgres)"
 	@echo "ci-docker   same, inside node:24 with a Postgres service container"
@@ -21,12 +22,14 @@ migrate:
 	npm run migrate
 
 seed:
-	npm run seed
+	DEV_LOGIN=1 npm run seed
 
 db-reset:
-	psql "$(DATABASE_URL)" -c "drop schema if exists public cascade; drop schema if exists graphile_worker cascade; drop schema if exists fakepay cascade; create schema public;"
+	DEV_LOGIN=1 npx tsx src/scripts/reset.ts
 	npm run migrate
-	npm run seed
+	DEV_LOGIN=1 npm run seed
+
+demo: db-reset dev
 
 dev:
 	DEV_LOGIN=1 npx --no-install concurrently -k -n api,worker,web \
