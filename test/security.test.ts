@@ -293,6 +293,7 @@ describe("6. browser hardening", () => {
     const web = await buildServer(app, { rp, devLogin: false, webRoot: root });
     const res = await web.inject({ method: "GET", url: "/" });
     await web.close();
+    expect(res.headers["cache-control"]).toBe("no-cache");
     const csp = String(res.headers["content-security-policy"]);
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");

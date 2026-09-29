@@ -160,7 +160,10 @@ export async function buildServer(app: App, opts: ServerOptions) {
   // is revalidated each time. Only content-hashed assets may be cached.
   f.addHook("onSend", async (req, reply) => {
     if (req.url.startsWith("/api/")) reply.header("cache-control", "no-store");
-    else if (!req.url.startsWith("/assets/")) reply.header("cache-control", "no-cache");
+    else if (req.url.startsWith("/assets/")) {
+      // Vite content-hashes these filenames, so a changed file is a new URL.
+      reply.header("cache-control", "public, max-age=31536000, immutable");
+    } else reply.header("cache-control", "no-cache");
     reply.header(
       "permissions-policy",
       "camera=(), microphone=(), geolocation=(), payment=(), usb=(), publickey-credentials-get=(self), publickey-credentials-create=(self)",
