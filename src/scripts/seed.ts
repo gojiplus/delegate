@@ -25,7 +25,12 @@ if (existing.length) {
   process.exit(0);
 }
 
-await k.db.insertInto("person").values(FIXTURE_PEOPLE).execute();
+// Simulated account creation: each person may enrol a first passkey for 30 days.
+const window = new Date(Date.now() + 30 * 86_400_000);
+await k.db
+  .insertInto("person")
+  .values(FIXTURE_PEOPLE.map((p) => ({ ...p, enrolment_open_until: window })))
+  .execute();
 await k.db.insertInto("staff_role").values({ person_id: "p_support", role: "support" }).execute();
 
 async function connectAndSelect(owner: string, institutions: string[], select: boolean) {

@@ -12,7 +12,7 @@ import { newId } from "../../src/kernel/ids.js";
 import { approvalOptions, prepareIntent, requestApproval } from "../../src/kernel/intents.js";
 import { markNeedsReconnect, reconnect } from "../../src/modules/finance/connections.js";
 import { accountsView, queueView } from "../../src/modules/finance/reads.js";
-import { connectAll, grant, jobs, signed } from "../helpers.js";
+import { connectAll, grant, jobs, signed, resume } from "../helpers.js";
 import { approvedIntent, payment, providerOps, type Scenario, scenario, status } from "./setup.js";
 
 let s: Scenario;
@@ -37,10 +37,8 @@ describe("owner and operational controls", () => {
     await dispatch(s.app.kernel, id);
     expect(await status(s, id)).toBe("Scheduled");
     expect(await holdOf(id)).toMatch(/paused/);
-    await setGrantStatus(s.app.kernel, "p_maria", s.grantId, "active");
-    expect((await jobs(s.app.kernel, "dispatch")).some((j) => j.key === `dispatch:${id}`)).toBe(
-      true,
-    );
+    await resume(s.app.kernel, "p_maria", s.grantId);
+    expect((await jobs(s.app, "dispatch")).some((j) => j.key === `dispatch:${id}`)).toBe(true);
     await dispatch(s.app.kernel, id);
     expect(await status(s, id)).toBe("Submitted");
   });
@@ -60,8 +58,19 @@ describe("owner and operational controls", () => {
     // Support sees states and references, not amounts or payees.
     const o = await supportOverview(s.app.kernel, "p_support");
     const row = o.intents.find((r) => r.id === id)!;
-    expect(Object.keys(row)).not.toContain("details");
-    expect(JSON.stringify(row)).not.toContain("31");
+    // Exactly these fields: states, times and provider references; no amounts, accounts or payees.
+    expect(Object.keys(row).sort()).toEqual([
+      "hold_reason",
+      "id",
+      "last_checked_at",
+      "owner_id",
+      "provider_operation_id",
+      "raw_status",
+      "status",
+      "status_reason",
+      "type",
+      "updated_at",
+    ]);
     await expect(supportOverview(s.app.kernel, "p_sam")).rejects.toThrow(/support only/);
   });
 

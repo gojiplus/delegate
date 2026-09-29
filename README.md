@@ -154,6 +154,8 @@ testcontainer. Every test file clones a migrated template database.
 | `test/scenarios/controls.test.ts`     | Pause and resume. The support kill switch. Recovery. Self-freeze. The gate re-checks narrowed and expired grants. Unknown amounts stay unknown. Autopay and recent-payment warnings. Stale connections. Reconnect remapping. Isolation between owners.                                            |
 | `test/api.test.ts`                    | Sessions are required. An actor claimed by the client is ignored. 404 parity. The idempotency header. The 422 capability response. Approving without a passkey fails. Webhook signatures. The scope of audit exports.                                                                             |
 | `test/worker.test.ts`                 | The same behaviour driven by the real graphile-worker runner.                                                                                                                                                                                                                                     |
+| `test/security.test.ts`               | One test per hardening item in the threat model: passkey enrolment, notices and the trusted contact, sessions, cross-site requests, headers and CSP, rate limits, fail-closed demo features, database roles, signed audit checkpoints, webhook replay, log redaction.                             |
+| `test/fuzz.test.ts`                   | 1,500 random requests to real routes (other people's IDs, junk IDs, injection strings, random bodies) sent as a delegate, a family member with no access, and an unrelated user. No 5xx, no response containing any ID or label they may not see, and nothing owned by the owners changes.        |
 
 **Checking that the tests can fail.** Each guard was switched off in turn and its test re-run:
 
@@ -173,6 +175,43 @@ Three guards are deliberate second layers, and no test fails when one is removed
 - Revocation's immediate cancellation and the gate's "grant still exists" check each stop a revoked delegate's payment; the race test fails only when both are removed.
 - The `selected` filter backs up the removal of deselected accounts from grants.
 
+## Security
+
+Security is the organising principle, and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) is its specification.
+Its central fact: in FinCEN's review of elder-theft reports, adult children were the most frequent
+perpetrators, at about 40% of cases. So the delegate, the person this product is built for, is treated as
+the first adversary. A delegate can see and prepare, but can never approve, widen their own access, or act
+without the owner and an independent trusted contact being told.
+
+The hardening items, each with a test that fails when the guard is removed (switched off one at a time,
+all 17 caught). An independent red-team review then found ten more holes, mostly in the delegate model. They
+are fixed and listed in the threat model.
+
+| Guard                                                                                                                                                                          | Why                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Adding a passkey needs an existing passkey, or a recovery window opened by verified identity                                                                                   | A stolen session, or a delegate at the owner's device, could otherwise enrol their own passkey and then approve payments |
+| Notices to the owner, the delegate and a trusted contact who is independent of every delegate                                                                                  | The owner hears through a channel the delegate doesn't control                                                           |
+| Sessions: `__Host-` cookie, Secure, HttpOnly, SameSite=Strict; only a hash stored; 30-minute idle and 12-hour absolute expiry; sign out everywhere; recovery ends all sessions | Limits what a stolen cookie or a copied table is worth                                                                   |
+| Every state-changing request must come from our origin                                                                                                                         | Cross-site request forgery                                                                                               |
+| Strict CSP with no inline scripts and no third-party hosts; the font is self-hosted                                                                                            | Cross-site scripting, framing, data exfiltration                                                                         |
+| Rate limits on sign-in, step-up and webhooks                                                                                                                                   | Brute force and enumeration                                                                                              |
+| Demo login refused when `NODE_ENV=production`; secrets required outside dev                                                                                                    | Demo conveniences must not reach production                                                                              |
+| The app runs as a database role that can only append to the audit log, cannot read the provider's schema, and can only add jobs, not read or change them                       | Defence in depth if the app is compromised                                                                               |
+| Signed checkpoints of the audit chain, using a key the database never holds                                                                                                    | Detects a rewrite even by someone who recomputes every hash                                                              |
+| Webhook signatures cover a timestamp; anything older than 5 minutes is rejected                                                                                                | Replay of captured webhooks                                                                                              |
+| Logs hold method, route and status only                                                                                                                                        | Tokens, amounts and account IDs never reach logs                                                                         |
+
+In CI, alongside the tests:
+
+- `npm audit`
+- CodeQL
+- OpenSSF Scorecard
+- Dependabot with a 7-day cooldown on new releases
+- secret scanning with push protection
+- an OWASP ZAP baseline scan of the app in its production shape
+
+Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
+
 ## Deliberately not here
 
 - Plaid, Method, Dwolla or any bank. The provider questions in PRD §12 have to be answered before R1 and R2.
@@ -183,5 +222,7 @@ Three guards are deliberate second layers, and no test fails when one is removed
 
 - **Time zones.** The scheduled date is a calendar date, and the server accepts "yesterday in UTC" so that "today" works anywhere in the Americas. Owners' time zones are not modelled.
 - **One executor per intent type.** R2 will need capability routing across providers.
-- **Recovery.** The "independent verification" step is simulated.
+- **Recovery.** The "independent verification" step is simulated; support attests to it.
+- **Postgres row-level security** is not used yet. The authorisation rule is enforced in the application and property-tested; the database roles give defence in depth. Row-level security would need every request to run in a transaction that carries the actor, and is planned for R1.
+- **Notices** go to an outbox shown in the app. Email and SMS delivery comes in R1.
 - **Webhook handling.** A webhook that conflicts with our state triggers a provider fetch inside a database transaction. That's fine for a simulator, but it should move out of the transaction before a real provider is used.

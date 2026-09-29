@@ -17,9 +17,9 @@ export function buildApp(opts: {
   fakepaySecret: string;
   db?: Db;
 }): App {
-  const db = opts.db ?? createDb(opts.databaseUrl);
+  const db = opts.db ?? createDb(opts.databaseUrl, "familyops_app");
   // The simulated provider gets its own pool: it is "someone else's system".
-  const providerDb = createDb(opts.databaseUrl);
+  const providerDb = createDb(opts.databaseUrl, "familyops_fakepay");
   const fakepay = createFakepay(providerDb, opts.fakepaySecret);
   const registry = new Registry([financeModule(fakepay)]);
   return {

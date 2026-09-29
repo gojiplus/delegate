@@ -99,12 +99,7 @@ async function gate(k: Kernel, tx: Tx, intentId: string): Promise<GateOutcome> {
 
   const notBefore = def.dispatchAt(details);
   if (notBefore.getTime() > Date.now()) {
-    await enqueue(
-      tx,
-      "dispatch",
-      { intentId },
-      { runAt: notBefore, jobKey: `dispatch:${intentId}` },
-    );
+    await enqueue(tx, "dispatch", { intentId }, { runAt: notBefore });
     return { kind: "noop", why: "not yet due" };
   }
 
@@ -180,7 +175,7 @@ async function gate(k: Kernel, tx: Tx, intentId: string): Promise<GateOutcome> {
     tx,
     "reconcile",
     { intentId },
-    { runAt: new Date(Date.now() + SAFETY_RECONCILE_MS), jobKey: `reconcile:${intentId}` },
+    { runAt: new Date(Date.now() + SAFETY_RECONCILE_MS) },
   );
   await audit(tx, {
     actorId: null,
@@ -359,7 +354,7 @@ async function applySubmitResult(
           tx,
           "reconcile",
           { intentId },
-          { runAt: new Date(Date.now() + SETTLEMENT_POLL_MS), jobKey: `reconcile:${intentId}` },
+          { runAt: new Date(Date.now() + SETTLEMENT_POLL_MS) },
         );
       }
     } else if (result.kind === "rejected") {
@@ -392,7 +387,7 @@ async function applySubmitResult(
         tx,
         "reconcile",
         { intentId, attempt: attempt + 1 },
-        { runAt: new Date(Date.now() + delay), jobKey: `reconcile:${intentId}` },
+        { runAt: new Date(Date.now() + delay) },
       );
     }
   });
@@ -500,7 +495,7 @@ export async function reconcile(k: Kernel, intentId: string, attempt = 0): Promi
           tx,
           "reconcile",
           { intentId },
-          { runAt: new Date(Date.now() + SETTLEMENT_POLL_MS), jobKey: `reconcile:${intentId}` },
+          { runAt: new Date(Date.now() + SETTLEMENT_POLL_MS) },
         );
       }
     });
@@ -525,12 +520,7 @@ export async function receiveWebhook(
       .returning("event_id")
       .executeTakeFirst();
     if (ins) {
-      await enqueue(
-        tx,
-        "process_inbox",
-        { provider: executorId, eventId: event.eventId },
-        { jobKey: `inbox:${executorId}:${event.eventId}` },
-      );
+      await enqueue(tx, "process_inbox", { provider: executorId, eventId: event.eventId });
     }
   });
   return true;

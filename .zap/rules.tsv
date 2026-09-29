@@ -1,0 +1,2 @@
+# ZAP rule overrides: id\tIGNORE|WARN|FAIL\t(reason)
+# Default: every alert fails the build except those listed here.

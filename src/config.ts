@@ -1,3 +1,10 @@
+import {
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  type KeyObject,
+} from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 const production = process.env.NODE_ENV === "production";
 const devLogin = process.env.DEV_LOGIN === "1";
 
@@ -22,3 +29,23 @@ export const config = {
   rpId: process.env.RP_ID ?? "localhost",
   rpOrigin: process.env.RP_ORIGIN ?? "http://localhost:5173",
 };
+
+// The key that signs audit checkpoints. In production it comes from the
+// environment (a KMS-held key in R1) and must never be stored in the database.
+// In the demo a local key is created once under .familyops/ (gitignored).
+export function auditSigningKey(): KeyObject {
+  const pem = process.env.AUDIT_SIGNING_KEY;
+  if (pem) return createPrivateKey(pem);
+  if (!devLogin) throw new Error("AUDIT_SIGNING_KEY is required unless DEV_LOGIN=1");
+  const path = ".familyops/audit-signing-key.pem";
+  if (!existsSync(path)) {
+    mkdirSync(".familyops", { recursive: true });
+    const { privateKey } = generateKeyPairSync("ed25519");
+    writeFileSync(path, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+  }
+  return createPrivateKey(readFileSync(path));
+}
+
+export function auditPublicKey(): KeyObject {
+  return createPublicKey(auditSigningKey());
+}

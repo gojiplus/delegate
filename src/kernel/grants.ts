@@ -6,6 +6,8 @@ import type { Kernel } from "./context.js";
 import { newId } from "./ids.js";
 import { enqueue } from "./jobs.js";
 import { UNDISPATCHED, isTerminal, note, transition } from "./lifecycle.js";
+import { sameMailbox } from "./contacts.js";
+import { notify } from "./notify.js";
 import { KernelError, type Registry } from "./registry.js";
 import { consumeStepUp } from "./stepup.js";
 
@@ -183,6 +185,28 @@ export async function setGrant(
         .execute();
     }
     await writeResources(tx, grantId, p.resourceIds);
+    const delegate = await tx
+      .selectFrom("person")
+      .select(["display_name", "email"])
+      .where("id", "=", p.delegateId)
+      .executeTakeFirstOrThrow();
+    const contact = await tx
+      .selectFrom("trusted_contact")
+      .select("email")
+      .where("owner_id", "=", grantorId)
+      .executeTakeFirst();
+    if (contact && sameMailbox(contact.email) === sameMailbox(delegate.email)) {
+      throw new KernelError("invalid", "your trusted contact cannot also help with your accounts");
+    }
+    const preparesPayments = p.scopes.some((s) => s.endsWith(".prepare"));
+    await notify(tx, {
+      ownerId: grantorId,
+      kind: existing ? "grant.changed" : "grant.created",
+      message: `${delegate.display_name} ${existing ? "now has changed" : "now has"} access to ${p.resourceIds.length} of your accounts${preparesPayments ? ", including preparing payments for your approval" : ""}. If you didn't do this, revoke it and contact support.`,
+      toOwner: true,
+      toTrustedContact: true,
+      toPeople: [p.delegateId],
+    });
     await audit(tx, {
       actorId: grantorId,
       actorKind: "person",
@@ -208,13 +232,18 @@ export async function setGrant(
   });
 }
 
+export const resumeBinding = (grantId: string, version: number) => `resume:${grantId}:${version}`;
+
 // Reducing access never requires step-up: making revocation hard would only
-// protect the delegate. Pause and revoke take effect at commit.
+// protect the delegate. Pause and revoke take effect at commit. Resuming
+// restores authority, so it needs the grantor's passkey like any widening,
+// and the owner and trusted contact are told.
 export async function setGrantStatus(
   k: Kernel,
   grantorId: string,
   grantId: string,
   status: "active" | "paused" | "revoked",
+  stepUpResponse?: unknown,
 ): Promise<{ inFlight: string[] }> {
   return k.db.transaction().execute(async (tx) => {
     const g = await tx
@@ -225,6 +254,29 @@ export async function setGrantStatus(
       .executeTakeFirst();
     if (!g || g.grantor_id !== grantorId) throw new KernelError("not_found", "not found");
     if (g.status === "revoked") throw new KernelError("conflict", "grant already revoked");
+    if (status === "active") {
+      if (g.status === "active") return { inFlight: [] };
+      await consumeStepUp(
+        tx,
+        k.stepUp,
+        grantorId,
+        "grant",
+        resumeBinding(grantId, g.version),
+        stepUpResponse,
+      );
+      const d = await tx
+        .selectFrom("person")
+        .select("display_name")
+        .where("id", "=", g.delegate_id)
+        .executeTakeFirstOrThrow();
+      await notify(tx, {
+        ownerId: grantorId,
+        kind: "grant.resumed",
+        message: `${d.display_name}'s paused access to your accounts was resumed. If you didn't do this, revoke it and contact support.`,
+        toOwner: true,
+        toTrustedContact: true,
+      });
+    }
     await tx
       .updateTable("delegation_grant")
       .set({
@@ -266,11 +318,22 @@ export async function setGrantStatus(
           {},
           grantorId,
         );
-        await enqueue(tx, "cancel_in_flight", { intentId: i.id }, { jobKey: `cancel:${i.id}` });
+        await enqueue(tx, "cancel_in_flight", { intentId: i.id });
       } else if (status === "active" && i.status === "Scheduled") {
-        await enqueue(tx, "dispatch", { intentId: i.id }, { jobKey: `dispatch:${i.id}` });
+        await enqueue(tx, "dispatch", { intentId: i.id });
       }
     }
+    await notify(tx, {
+      ownerId: grantorId,
+      kind: `grant.${status}`,
+      message:
+        status === "revoked"
+          ? "Your access to someone's accounts has been revoked."
+          : status === "paused"
+            ? "Your access to someone's accounts has been paused."
+            : "Your access to someone's accounts has been resumed.",
+      toPeople: [g.delegate_id],
+    });
     await audit(tx, {
       actorId: grantorId,
       actorKind: "person",
@@ -295,6 +358,16 @@ export async function requestMoreAccess(
   const id = newId("greq");
   await k.db.transaction().execute(async (tx) => {
     for (const s of scopes) k.registry.scope(s);
+    // Only someone already helping may ask for more; strangers can't use
+    // requests as a way to reach an owner with a persuasive note.
+    const existing = await tx
+      .selectFrom("delegation_grant")
+      .select("id")
+      .where("grantor_id", "=", grantorId)
+      .where("delegate_id", "=", delegateId)
+      .where("status", "<>", "revoked")
+      .executeTakeFirst();
+    if (!existing) throw new KernelError("not_found", "not found");
     await tx
       .insertInto("grant_request")
       .values({
@@ -327,6 +400,7 @@ export async function describeRequest(k: Kernel, grantorId: string, requestId: s
     .selectAll()
     .where("id", "=", requestId)
     .where("grantor_id", "=", grantorId)
+    .where("status", "=", "pending")
     .executeTakeFirst();
   if (!req) throw new KernelError("not_found", "not found");
   const current = await k.db

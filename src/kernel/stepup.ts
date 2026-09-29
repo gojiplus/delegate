@@ -8,7 +8,7 @@ import { KernelError } from "./registry.js";
 // authorised, and is single-use. A link in an email or a notification only
 // opens the screen; it can never supply this proof.
 
-export type StepUpPurpose = "grant" | "approve" | "register" | "recovery";
+export type StepUpPurpose = "grant" | "approve" | "register" | "recovery" | "enrol";
 
 export interface StepUpVerifier {
   // Reads the challenge the client signed, without trusting anything else yet.

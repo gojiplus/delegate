@@ -12,10 +12,9 @@ import {
 } from "../src/kernel/grants.js";
 import { addPayee, connectInstitution } from "../src/modules/finance/connections.js";
 import { accountsView, queueView, transactionsView } from "../src/modules/finance/reads.js";
-import { type App } from "../src/app.js";
-import { connectAll, freshApp, grant, signed } from "./helpers.js";
+import { connectAll, freshApp, grant, signed, type TestApp, resume } from "./helpers.js";
 
-let app: App;
+let app: TestApp;
 let maria: Record<string, string>;
 
 beforeAll(async () => {
@@ -198,7 +197,7 @@ describe("grants and scoped reads", () => {
       .executeTakeFirstOrThrow();
     await setGrantStatus(app.kernel, "p_maria", g.id, "paused");
     expect((await accountsView(app.kernel, "p_sam")).accounts).toEqual([]);
-    await setGrantStatus(app.kernel, "p_maria", g.id, "active");
+    await resume(app.kernel, "p_maria", g.id);
     expect((await accountsView(app.kernel, "p_sam")).accounts).toHaveLength(1);
     await expect(setGrantStatus(app.kernel, "p_sam", g.id, "revoked")).rejects.toThrow("not found");
     await setGrantStatus(app.kernel, "p_maria", g.id, "revoked");
@@ -255,10 +254,18 @@ describe("grants and scoped reads", () => {
       ),
     ).toBe(true);
     expect(verifyChain(records)).toEqual({ ok: true });
+    // Twice guarded: the application role lacks the privilege outright, and
+    // even the table owner is stopped by the append-only trigger.
     await expect(
       app.kernel.db.updateTable("audit_event").set({ action: "x" }).execute(),
+    ).rejects.toThrow(/permission denied/);
+    await expect(app.kernel.db.deleteFrom("audit_event").execute()).rejects.toThrow(
+      /permission denied/,
+    );
+    await expect(
+      app.admin.updateTable("audit_event").set({ action: "x" }).execute(),
     ).rejects.toThrow(/append-only/);
-    await expect(app.kernel.db.deleteFrom("audit_event").execute()).rejects.toThrow(/append-only/);
+    await expect(app.admin.deleteFrom("audit_event").execute()).rejects.toThrow(/append-only/);
     const tampered = records.map((r, n) =>
       n === 3 ? { ...r, detail: { ...r.detail, forged: true } } : r,
     );

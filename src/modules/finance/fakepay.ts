@@ -34,6 +34,8 @@ const NORMAL: Record<FakepayState, string> = {
   failed: "Failed",
 };
 
+const WEBHOOK_TOLERANCE_S = 300;
+
 export class ProviderTimeout extends Error {}
 
 export class Fakepay implements IntentExecutor<PaymentDetails> {
@@ -149,16 +151,21 @@ export class Fakepay implements IntentExecutor<PaymentDetails> {
     return { eventId, operationId, rawStatus: state };
   }
 
-  sign(event: ProviderEvent): { headers: Record<string, string>; body: string } {
+  // Signature covers a timestamp and the body. A captured webhook is useless
+  // after the tolerance window, and within it the event ID is deduplicated.
+  sign(event: ProviderEvent, at = Date.now()): { headers: Record<string, string>; body: string } {
     const body = JSON.stringify(event);
-    const sig = createHmac("sha256", this.secret).update(body).digest("hex");
-    return { headers: { "x-fakepay-signature": sig }, body };
+    const ts = String(Math.floor(at / 1000));
+    const sig = createHmac("sha256", this.secret).update(`${ts}.${body}`).digest("hex");
+    return { headers: { "x-fakepay-timestamp": ts, "x-fakepay-signature": sig }, body };
   }
 
   verifyWebhook(headers: Record<string, string | undefined>, body: string): ProviderEvent | null {
     const given = headers["x-fakepay-signature"];
-    if (!given) return null;
-    const want = createHmac("sha256", this.secret).update(body).digest();
+    const ts = headers["x-fakepay-timestamp"];
+    if (!given || !ts || !/^\d{1,12}$/.test(ts)) return null;
+    if (Math.abs(Date.now() / 1000 - Number(ts)) > WEBHOOK_TOLERANCE_S) return null;
+    const want = createHmac("sha256", this.secret).update(`${ts}.${body}`).digest();
     const got = Buffer.from(given, "hex");
     if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
     const e = JSON.parse(body) as ProviderEvent;

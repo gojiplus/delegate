@@ -2,7 +2,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testconta
 import { runMigrations } from "graphile-worker";
 import pg from "pg";
 import type { TestProject } from "vitest/node";
-import { createDb, migrate } from "../src/db/index.js";
+import { createDb, grantJobPrivileges, migrate } from "../src/db/index.js";
 
 let container: StartedPostgreSqlContainer | undefined;
 
@@ -30,8 +30,9 @@ export async function setup(project: TestProject) {
   url.pathname = "/familyops_template";
   const db = createDb(url.toString());
   await migrate(db);
-  await db.destroy();
   await runMigrations({ connectionString: url.toString() });
+  await grantJobPrivileges(db);
+  await db.destroy();
   url.pathname = "/postgres";
   project.provide("pgAdminUrl", url.toString());
 }

@@ -1,6 +1,8 @@
 import { run } from "graphile-worker";
 import { buildApp } from "../app.js";
-import { config, webhookSecret } from "../config.js";
+import { createPublicKey } from "node:crypto";
+import { auditSigningKey, config, webhookSecret } from "../config.js";
+import { keyIdOf } from "../kernel/audit.js";
 import { KernelError } from "../kernel/registry.js";
 import { taskList } from "./tasks.js";
 
@@ -16,10 +18,14 @@ const app = buildApp({
   },
   fakepaySecret: webhookSecret(),
 });
+const privateKey = auditSigningKey();
+const signer = { keyId: keyIdOf(createPublicKey(privateKey)), privateKey };
 const runner = await run({
   connectionString: config.databaseUrl,
   concurrency: 5,
   pollInterval: 1000,
-  taskList: taskList(app),
+  taskList: taskList(app, signer),
+  // Sign the audit chain head every 15 minutes.
+  crontab: "*/15 * * * * audit_checkpoint",
 });
 await runner.promise;

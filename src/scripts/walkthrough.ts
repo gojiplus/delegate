@@ -24,7 +24,10 @@ async function person(ctx: BrowserContext, id: string): Promise<Page> {
     },
   });
   await page.goto(BASE);
-  await page.request.post(`${BASE}/api/dev/login`, { data: { personId: id } });
+  await page.request.post(`${BASE}/api/dev/login`, {
+    data: { personId: id },
+    headers: { origin: BASE },
+  });
   await page.goto(BASE);
   return page;
 }

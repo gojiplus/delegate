@@ -59,9 +59,7 @@ describe("prepare → approve → dispatch → reconcile", () => {
 
     await approve(s.app.kernel, "p_maria", intentId);
     expect(await status(s, intentId)).toBe("Scheduled");
-    expect((await jobs(s.app.kernel, "dispatch")).map((j) => j.key)).toContain(
-      `dispatch:${intentId}`,
-    );
+    expect((await jobs(s.app, "dispatch")).map((j) => j.key)).toContain(`dispatch:${intentId}`);
 
     await dispatch(s.app.kernel, intentId);
     expect(await status(s, intentId)).toBe("Submitted");
@@ -216,9 +214,7 @@ describe("prepare → approve → dispatch → reconcile", () => {
     await approve(s.app.kernel, "p_maria", intentId);
     expect((await dispatch(s.app.kernel, intentId)).kind).toBe("noop");
     expect(await status(s, intentId)).toBe("Scheduled");
-    const job = (await jobs(s.app.kernel, "dispatch")).find(
-      (j) => j.key === `dispatch:${intentId}`,
-    );
+    const job = (await jobs(s.app, "dispatch")).find((j) => j.key === `dispatch:${intentId}`);
     expect(job!.run_at.toISOString().slice(0, 10)).toBe(future);
   });
 });
