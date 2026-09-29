@@ -1,0 +1,9 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: familyops
+      POSTGRES_PASSWORD: familyops
+      POSTGRES_DB: familyops
+    ports:
+      - "54329:5432"

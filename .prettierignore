@@ -1,0 +1,6 @@
+node_modules
+web/dist
+package-lock.json
+docs/PRD.md
+playwright-report
+test-results
