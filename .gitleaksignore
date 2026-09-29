@@ -1,0 +1,5 @@
+# A locally generated demo audit-signing key was committed by mistake in the
+# rename (6e0ad21, 2026-09-28). It signed only local demo checkpoints, was
+# rotated the same day and removed from the tree; history was not rewritten.
+6e0ad21c2dbff9ac5c374ef05a359a3a9a0ccbdd:.familyops/audit-signing-key.pem:private-key:1
+bde7d58f7edeee5b050610ba191d7bee91a1f925:.familyops/audit-signing-key.pem:private-key:1
