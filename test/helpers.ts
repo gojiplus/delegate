@@ -37,7 +37,7 @@ export async function freshApp(): Promise<TestApp> {
   const name = `t_${randomBytes(6).toString("hex")}`;
   const c = new pg.Client({ connectionString: adminUrl });
   await c.connect();
-  await c.query(`create database ${name} template familyops_template`);
+  await c.query(`create database ${name} template delegate_template`);
   await c.end();
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;

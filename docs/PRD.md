@@ -2,7 +2,7 @@
 
 PRD and architecture proposal · v0.1 · September 28, 2026
 
-> Note (2026-09-28): parents and adult children are the motivating example, not the boundary. The implementation treats delegation generically — any owner, any delegate — through a domain-neutral kernel with finance as the first module. See the README's architecture section.
+> Note (2026-09-28): the product is now called **Delegate** (repo `gojiplus/delegate`). Parents and adult children are the motivating example, not the boundary. The implementation treats delegation generically — any owner, any delegate — through a domain-neutral kernel with finance as the first module. See the README's architecture section.
 
 ## 1. Recommendation
 

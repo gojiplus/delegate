@@ -14,7 +14,7 @@ export async function enqueue(
   payload: Record<string, unknown>,
   opts: { runAt?: Date } = {},
 ): Promise<void> {
-  await sql`select public.familyops_enqueue(
+  await sql`select public.delegate_enqueue(
     ${task},
     ${JSON.stringify(payload)}::json,
     ${opts.runAt ?? null}::timestamptz

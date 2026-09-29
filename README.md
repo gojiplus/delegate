@@ -1,4 +1,4 @@
-# FamilyOps
+# Delegate
 
 Help someone with their finances using your own identity, and nothing more than they chose to share.
 An **owner** grants a named **delegate** specific, revocable abilities over specific accounts. The delegate
@@ -112,7 +112,7 @@ Requires Node ≥ 22.18 and any Postgres 17.
 ```sh
 npm ci
 make db-up                                   # Postgres in Docker on :54329, or skip this and…
-export DATABASE_URL=postgres://…/familyops   # …point at any Postgres 17 you have
+export DATABASE_URL=postgres://…/delegate   # …point at any Postgres 17 you have
 make demo                                    # wipes that database, seeds it, runs everything
 ```
 

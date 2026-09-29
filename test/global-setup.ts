@@ -20,14 +20,14 @@ export async function setup(project: TestProject) {
   const admin = new pg.Client({ connectionString: adminUrl });
   await admin.connect();
   const stale = await admin.query<{ datname: string }>(
-    "select datname from pg_database where datname = 'familyops_template' or datname like 't\\_%'",
+    "select datname from pg_database where datname = 'delegate_template' or datname like 't\\_%'",
   );
   for (const { datname } of stale.rows)
     await admin.query(`drop database "${datname}" with (force)`);
-  await admin.query("create database familyops_template");
+  await admin.query("create database delegate_template");
   await admin.end();
   const url = new URL(adminUrl);
-  url.pathname = "/familyops_template";
+  url.pathname = "/delegate_template";
   const db = createDb(url.toString());
   await migrate(db);
   await runMigrations({ connectionString: url.toString() });

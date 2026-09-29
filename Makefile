@@ -1,6 +1,6 @@
 .PHONY: help install db-up db-reset demo migrate seed dev lint typecheck format test ci ci-docker
 
-DATABASE_URL ?= postgres://familyops:familyops@localhost:54329/familyops
+DATABASE_URL ?= postgres://delegate:delegate@localhost:54329/delegate
 export DATABASE_URL
 
 help:

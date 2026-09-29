@@ -12,7 +12,7 @@ import type { PaymentDetails } from "./payment.js";
 // A simulated creditor-payment provider with a controllable failure mode. It
 // keeps its own state in the `fakepay` schema and is always reached through
 // its own connection, so like a real provider nothing it writes shares a
-// transaction with FamilyOps. Its documented semantics, which the adapter
+// transaction with Delegate. Its documented semantics, which the adapter
 // relies on: one operation per idempotency key, forever; lookups by key.
 
 export type FakepayMode =

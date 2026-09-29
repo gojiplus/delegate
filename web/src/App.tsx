@@ -81,7 +81,7 @@ export function App() {
       </div>
       <header className="top">
         <a className="brand" href="#/">
-          FamilyOps
+          Delegate
         </a>
         {me && (
           <span className="who">

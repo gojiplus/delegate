@@ -1,5 +1,5 @@
 {
-  "name": "familyops",
+  "name": "delegate",
   "version": "0.0.0",
   "private": true,
   "description": "Delegated administration: owners grant named delegates scoped, revocable access and approve every action. R0 demonstrator — simulated data and payments only.",

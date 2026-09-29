@@ -4,7 +4,7 @@ import { auditPublicKey, config, webhookSecret } from "../config.js";
 import { passkeyVerifier } from "../kernel/webauthn.js";
 import { buildServer } from "./server.js";
 
-const rp = { id: config.rpId, name: "FamilyOps (R0 demonstrator)", origin: config.rpOrigin };
+const rp = { id: config.rpId, name: "Delegate (R0 demonstrator)", origin: config.rpOrigin };
 const app = buildApp({
   databaseUrl: config.databaseUrl,
   stepUp: passkeyVerifier(rp),

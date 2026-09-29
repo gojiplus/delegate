@@ -22,8 +22,7 @@ export function webhookSecret(): string {
 
 export const config = {
   production,
-  databaseUrl:
-    process.env.DATABASE_URL ?? "postgres://familyops:familyops@localhost:54329/familyops",
+  databaseUrl: process.env.DATABASE_URL ?? "postgres://delegate:delegate@localhost:54329/delegate",
   apiPort: Number(process.env.PORT ?? 8787),
   devLogin,
   rpId: process.env.RP_ID ?? "localhost",
@@ -32,14 +31,14 @@ export const config = {
 
 // The key that signs audit checkpoints. In production it comes from the
 // environment (a KMS-held key in R1) and must never be stored in the database.
-// In the demo a local key is created once under .familyops/ (gitignored).
+// In the demo a local key is created once under .delegate/ (gitignored).
 export function auditSigningKey(): KeyObject {
   const pem = process.env.AUDIT_SIGNING_KEY;
   if (pem) return createPrivateKey(pem);
   if (!devLogin) throw new Error("AUDIT_SIGNING_KEY is required unless DEV_LOGIN=1");
-  const path = ".familyops/audit-signing-key.pem";
+  const path = ".delegate/audit-signing-key.pem";
   if (!existsSync(path)) {
-    mkdirSync(".familyops", { recursive: true });
+    mkdirSync(".delegate", { recursive: true });
     const { privateKey } = generateKeyPairSync("ed25519");
     writeFileSync(path, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
   }

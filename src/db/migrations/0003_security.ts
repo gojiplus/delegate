@@ -46,21 +46,21 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     -- can only append to the audit log, and cannot see the simulated
     -- provider's schema at all; the provider role sees only that schema.
     do $$ begin
-      if not exists (select from pg_roles where rolname = 'familyops_app') then create role familyops_app nologin; end if;
-      if not exists (select from pg_roles where rolname = 'familyops_fakepay') then create role familyops_fakepay nologin; end if;
+      if not exists (select from pg_roles where rolname = 'delegate_app') then create role delegate_app nologin; end if;
+      if not exists (select from pg_roles where rolname = 'delegate_fakepay') then create role delegate_fakepay nologin; end if;
     end $$;
 
-    grant usage on schema public to familyops_app;
-    grant select, insert, update, delete on all tables in schema public to familyops_app;
-    grant usage, select on all sequences in schema public to familyops_app;
-    revoke update, delete, truncate on audit_event, audit_checkpoint from familyops_app;
-    revoke delete, truncate on intent_event from familyops_app;
-    revoke all on kysely_migration, kysely_migration_lock from familyops_app;
-    revoke all on schema fakepay from familyops_app;
+    grant usage on schema public to delegate_app;
+    grant select, insert, update, delete on all tables in schema public to delegate_app;
+    grant usage, select on all sequences in schema public to delegate_app;
+    revoke update, delete, truncate on audit_event, audit_checkpoint from delegate_app;
+    revoke delete, truncate on intent_event from delegate_app;
+    revoke all on kysely_migration, kysely_migration_lock from delegate_app;
+    revoke all on schema fakepay from delegate_app;
 
-    grant usage on schema fakepay to familyops_fakepay;
-    grant select, insert, update, delete on all tables in schema fakepay to familyops_fakepay;
-    grant usage, select on all sequences in schema fakepay to familyops_fakepay;
+    grant usage on schema fakepay to delegate_fakepay;
+    grant select, insert, update, delete on all tables in schema fakepay to delegate_fakepay;
+    grant usage, select on all sequences in schema fakepay to delegate_fakepay;
   `.execute(db);
 }
 
