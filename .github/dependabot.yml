@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    ignore:
+      # Types must describe the oldest supported runtime (Node 22, see
+      # package.json engines), or code can compile against APIs it lacks.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     # Supply-chain guard: only propose releases that are at least a week old.
     # Security updates are not delayed by cooldown.
     cooldown:

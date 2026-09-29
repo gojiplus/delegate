@@ -39,6 +39,18 @@ jobs:
         run: npm audit --audit-level=high
       - run: make ci
 
+  # Every push is scanned for secrets across full history, so a key committed
+  # by mistake fails CI instead of relying on someone running the scan by hand.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --redact --exit-code 1
+
   # Passive scan of the app in its production shape: the API serving the built
   # web app under its real headers and CSP, with demo features switched off.
   zap:
