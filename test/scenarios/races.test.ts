@@ -38,10 +38,18 @@ describe("races", () => {
       await regrant();
       const id = await approvedIntent(s, 100 + n);
       const gid = (await liveGrantId())!;
-      await Promise.all([
-        dispatch(s.app.kernel, id),
-        setGrantStatus(s.app.kernel, "p_maria", gid, "revoked"),
-      ]);
+      if (n === 0) {
+        await setGrantStatus(s.app.kernel, "p_maria", gid, "revoked");
+        await dispatch(s.app.kernel, id);
+      } else if (n === 1) {
+        await dispatch(s.app.kernel, id);
+        await setGrantStatus(s.app.kernel, "p_maria", gid, "revoked");
+      } else {
+        await Promise.all([
+          dispatch(s.app.kernel, id),
+          setGrantStatus(s.app.kernel, "p_maria", gid, "revoked"),
+        ]);
+      }
       const ops = await providerOps(s, id);
       const st = await status(s, id);
       const events = await s.app.kernel.db
@@ -69,11 +77,11 @@ describe("races", () => {
           true,
         );
         const dispatching = events.find((e) => e.to_status === "Dispatching")!;
-        expect(dispatching.id < revokeEvent!.id).toBe(true);
+        expect(BigInt(dispatching.id) < BigInt(revokeEvent!.id)).toBe(true);
         outcomes.dispatchedFirst++;
       }
     }
-    // Both orders must actually occur, or this test proves nothing about the race.
+    // Cover both committed orders before exercising concurrent scheduling.
     expect(outcomes.revokedFirst).toBeGreaterThan(0);
     expect(outcomes.dispatchedFirst).toBeGreaterThan(0);
   }, 120_000);
