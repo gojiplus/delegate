@@ -463,6 +463,19 @@ describe("12. logs hold no secrets", () => {
 });
 
 describe("red-team follow-ups", () => {
+  it("does not reflect account identifiers in unknown-route responses", async () => {
+    const sam = await login("p_sam");
+    for (const path of ["/api/unknown", "/api/accounts/./capabilities"]) {
+      const response = await server.inject({
+        method: "GET",
+        url: `${path}?payee=${maria["9042"]}`,
+        headers: sam.headers,
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.body).not.toContain(maria["9042"]!);
+    }
+  });
+
   it("a delegate cannot send the owner's own draft for approval", async () => {
     const { intentId } = await prepareIntent(app.kernel, "p_maria", newId("c"), {
       type: "finance.payment",
