@@ -199,6 +199,10 @@ export async function buildServer(app: App, opts: ServerOptions) {
     }
   });
 
+  f.setNotFoundHandler((_req, reply) => {
+    return reply.code(404).send({ error: "not_found", message: "not found" });
+  });
+
   f.setErrorHandler((err, req, reply) => {
     if (err instanceof UnsupportedAction) {
       return reply.code(422).send({ error: "unsupported", capability: err.capability });
