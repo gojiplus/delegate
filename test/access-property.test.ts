@@ -129,29 +129,31 @@ describe("authorisation matches an independent model", () => {
               scopes.length > 0 &&
               picked.length > 0 &&
               scopes.every((s) => picked.some((r) => SCOPE_TYPES[s]!.includes(r.type)));
+            let grantId: string;
             try {
-              const { grantId } = await grant(app.kernel, owner, {
+              ({ grantId } = await grant(app.kernel, owner, {
                 delegateId: delegate,
                 scopes,
                 resourceIds: picked.map((r) => r.id),
-              });
-              expect(valid).toBe(true);
-              const live = model.grants.find(
-                (g) => g.grantor === owner && g.delegate === delegate && g.status !== "revoked",
-              );
-              if (live) Object.assign(live, { scopes, resources: picked.map((r) => r.id) });
-              else
-                model.grants.push({
-                  id: grantId,
-                  grantor: owner,
-                  delegate,
-                  scopes,
-                  resources: picked.map((r) => r.id),
-                  status: "active",
-                });
+              }));
             } catch (e) {
               if (valid) throw e;
+              continue;
             }
+            expect(valid).toBe(true);
+            const live = model.grants.find(
+              (g) => g.grantor === owner && g.delegate === delegate && g.status !== "revoked",
+            );
+            if (live) Object.assign(live, { scopes, resources: picked.map((r) => r.id) });
+            else
+              model.grants.push({
+                id: grantId,
+                grantor: owner,
+                delegate,
+                scopes,
+                resources: picked.map((r) => r.id),
+                status: "active",
+              });
           } else if (op.kind === "status") {
             const live = model.grants.filter((g) => g.status !== "revoked");
             const g = live[op.g % Math.max(live.length, 1)];
