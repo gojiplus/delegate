@@ -20,7 +20,8 @@ export const GrantProposal = z.object({
 });
 export type GrantProposal = z.infer<typeof GrantProposal>;
 
-function normalise(p: GrantProposal): GrantProposal {
+function normalise(input: GrantProposal): GrantProposal {
+  const p = GrantProposal.parse(input);
   return {
     ...p,
     scopes: [...new Set(p.scopes)].sort(),
