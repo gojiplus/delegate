@@ -126,7 +126,7 @@ export async function paymentCapability(
     };
   }
   const days = (Date.parse(d.scheduledDate) - Date.parse(todayUtc())) / 86_400_000;
-  // Owners' time zones are not modelled yet; allowing yesterday-in-UTC accepts
+  // Owners' time zones are not modeled yet; allowing yesterday-in-UTC accepts
   // "today" anywhere in the Americas. Dispatch never happens before now anyway.
   if (days < -1) return { state: "unavailable", reason: "The scheduled date is in the past." };
   if (days > MAX_DAYS_AHEAD)
@@ -241,7 +241,7 @@ function periodKey(tz: string, at = new Date()): string {
 }
 
 // Cumulative caps are reserved atomically: an advisory lock per grant
-// serialises concurrent dispatches, pending payments count, and only a
+// serializes concurrent dispatches, pending payments count, and only a
 // definitive failure or return gives the capacity back (PRD §7).
 async function reserve(
   tx: Tx,

@@ -25,7 +25,7 @@ if (existing.length) {
   process.exit(0);
 }
 
-// Simulated account creation: each person may enrol a first passkey for 30 days.
+// Simulated account creation: each person may enroll a first passkey for 30 days.
 const window = new Date(Date.now() + 30 * 86_400_000);
 await k.db
   .insertInto("person")

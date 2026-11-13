@@ -6,7 +6,7 @@ import { addPayee, selectAccounts } from "../src/modules/finance/connections.js"
 import { accountsView } from "../src/modules/finance/reads.js";
 import { connectAll, freshApp, grant, type TestApp, resume } from "./helpers.js";
 
-// The SQL authorisation is checked against an in-memory model that shares no
+// The SQL authorization is checked against an in-memory model that shares no
 // code with it: random sequences of grant, pause, resume, revoke and deselect,
 // then every (person, scope, resource) triple is compared.
 

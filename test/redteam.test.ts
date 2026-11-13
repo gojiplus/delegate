@@ -33,7 +33,7 @@ import {
   status,
 } from "./scenarios/setup.js";
 
-// Red-team tests. Each asserts the SECURE behaviour, so each fails while the
+// Red-team tests. Each asserts the SECURE behavior, so each fails while the
 // weakness it names exists. Adversary labels follow docs/THREAT_MODEL.md.
 
 const rp = { id: "localhost", name: "test", origin: "http://localhost:5173" };

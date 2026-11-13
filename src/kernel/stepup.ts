@@ -5,7 +5,7 @@ import { KernelError } from "./registry.js";
 // Step-up authentication for anything that expands authority or moves money:
 // creating or widening a grant, approving an intent, finishing recovery. Each
 // challenge is bound to a purpose and to the digest of the exact thing being
-// authorised, and is single-use. A link in an email or a notification only
+// authorized, and is single-use. A link in an email or a notification only
 // opens the screen; it can never supply this proof.
 
 export type StepUpPurpose = "grant" | "approve" | "register" | "recovery" | "enrol";

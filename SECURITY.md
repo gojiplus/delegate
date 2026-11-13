@@ -14,7 +14,7 @@ Include what you did, what happened, and what you expected. A failing test again
 
 This repository is the **R0 demonstrator**. All accounts, balances and payments are simulated fixtures;
 no real financial data exists anywhere in it and no money can move. Findings are still in scope,
-because the same authorisation, approval and dispatch code will carry real data in later releases.
+because the same authorization, approval and dispatch code will carry real data in later releases.
 
 Especially wanted:
 

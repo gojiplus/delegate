@@ -92,7 +92,7 @@ export async function unfreezeOwner(k: Kernel, ownerId: string, stepUpResponse: 
 
 // Recovery (lost passkey). The owner's old credentials are removed and all
 // execution is frozen until the owner completes independent verification and
-// enrols a new passkey. A delegate can neither start nor finish this: the
+// enrolls a new passkey. A delegate can neither start nor finish this: the
 // actor must be the owner (in R0 the independent verification is simulated).
 export async function startRecovery(k: Kernel, actorId: string, ownerId: string) {
   if (actorId !== ownerId && !(await isSupport(k.db, actorId))) {
@@ -137,7 +137,7 @@ const ENROLMENT_WINDOW_MS = 60 * 60 * 1000;
 
 // Independent identity verification. In R0 a support agent attests to it; in
 // R1 this is an identity-verification provider. It opens a one-hour window in
-// which the owner, and only the owner, can enrol a new first passkey.
+// which the owner, and only the owner, can enroll a new first passkey.
 export async function completeRecoveryVerification(k: Kernel, actorId: string, ownerId: string) {
   await requireSupport(k, actorId);
   await k.db.transaction().execute(async (tx) => {

@@ -27,10 +27,10 @@ async function hold(tx: Tx, intentId: string, status: string, why: string): Prom
   return { kind: "held", why };
 }
 
-// Every check that authorised this intent is repeated here, inside one
+// Every check that authorized this intent is repeated here, inside one
 // transaction that holds a lock on the intent and a share lock on the
 // delegate's grant. Revocation takes an update lock on the same grant row, so
-// the two serialise: if revocation commits first, this sees it and nothing is
+// the two serialize: if revocation commits first, this sees it and nothing is
 // sent; if this commits first, the intent is already Dispatching and
 // revocation can only request cancellation (P7, PRD §10).
 //

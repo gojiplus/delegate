@@ -19,15 +19,15 @@ bookkeeper.
 These screenshots were produced by `src/scripts/walkthrough.ts`, which drives the running app in Chromium.
 Each person gets a virtual passkey.
 
-| Step                                                            | What to notice                                                                                                                             |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Owner's home](docs/screenshots/01-owner-home.png)              | Newly connected accounts stay private until chosen. The joint account says why it can't be shared.                                         |
-| [Sharing preview](docs/screenshots/03-share-preview.png)        | The grant is written out as sentences before the owner signs it.                                                                           |
-| [Delegate's queue](docs/screenshots/04-helper-queue.png)        | Grouped by owner. Every bill shows its source and freshness. A guessed bill is labelled as a guess, and an unknown amount stays "unknown". |
-| [Unsupported action](docs/screenshots/06-honest-capability.png) | A transfer between the owner's own accounts is refused, with the reason given.                                                             |
-| [Approval slip](docs/screenshots/08-approval-slip.png)          | Amount, fee, source, destination, preparer, timing and cancellation terms on one screen.                                                   |
-| [Timeline](docs/screenshots/10-timeline-posted.png)             | Every status after "Sent" comes from the provider. "Delivered" and "Posted" are different events.                                          |
-| [After revocation](docs/screenshots/11-helper-after-revoke.png) | The delegate loses access on their next request.                                                                                           |
+| Step                                                            | What to notice                                                                                                                            |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [Owner's home](docs/screenshots/01-owner-home.png)              | Newly connected accounts stay private until chosen. The joint account says why it can't be shared.                                        |
+| [Sharing preview](docs/screenshots/03-share-preview.png)        | The grant is written out as sentences before the owner signs it.                                                                          |
+| [Delegate's queue](docs/screenshots/04-helper-queue.png)        | Grouped by owner. Every bill shows its source and freshness. A guessed bill is labeled as a guess, and an unknown amount stays "unknown". |
+| [Unsupported action](docs/screenshots/06-honest-capability.png) | A transfer between the owner's own accounts is refused, with the reason given.                                                            |
+| [Approval slip](docs/screenshots/08-approval-slip.png)          | Amount, fee, source, destination, preparer, timing and cancellation terms on one screen.                                                  |
+| [Timeline](docs/screenshots/10-timeline-posted.png)             | Every status after "Sent" comes from the provider. "Delivered" and "Posted" are different events.                                         |
+| [After revocation](docs/screenshots/11-helper-after-revoke.png) | The delegate loses access on their next request.                                                                                          |
 
 ## How it works
 
@@ -54,7 +54,7 @@ The vocabulary comes from UMA 2.0 (resource owner, requesting party, resource, s
 uses a `type`-tagged details object to describe the exact thing being approved. An ESLint rule stops the
 kernel from importing a module.
 
-### The one authorisation rule
+### The one authorization rule
 
 An actor may use a scope on a resource if either:
 
@@ -88,7 +88,7 @@ Just before anything is sent, one transaction re-checks everything:
 
 In the same transaction it records the attempt and moves the payment to `Dispatching`.
 
-The gate locks the grant row and then the payment row, the same order revocation uses. So the two serialise:
+The gate locks the grant row and then the payment row, the same order revocation uses. So the two serialize:
 
 - if revocation commits first, nothing is sent;
 - if the gate commits first, the owner's timeline says the payment was already in flight and a cancellation request is queued.
@@ -146,15 +146,15 @@ testcontainer. Every test file clones a migrated template database.
 
 | File                                  | What it establishes                                                                                                                                                                                                                                                                               |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test/access-property.test.ts`        | For random sequences of grant, pause, resume, revoke and deselect, SQL authorisation agrees with an independent in-memory model on every (person, scope, resource) triple, in both the point checks and the lists.                                                                                |
+| `test/access-property.test.ts`        | For random sequences of grant, pause, resume, revoke and deselect, SQL authorization agrees with an independent in-memory model on every (person, scope, resource) triple, in both the point checks and the lists.                                                                                |
 | `test/grants.test.ts`                 | Scoped reads and totals. Guessed IDs. Joint and unselected accounts can't be shared. A delegate can't widen their own access. The passkey is bound to the exact grant and works once. Access requests. Expiry. The audit log is append-only, and editing or deleting an exported row is detected. |
 | `test/scenarios/payment-flow.test.ts` | The full path. Repeated clicks. Honest capabilities. Approval invalidated by a change. Only the owner approves, and only with a passkey. Expired approvals. Scheduled dates.                                                                                                                      |
-| `test/scenarios/failures.test.ts`     | Duplicate jobs. Timeout after acceptance. Request lost before acceptance. A provider without safe retry. A worker that crashed after the gate. Declines. Webhook signatures, duplicates, reordering and early arrival. Returns. Cancelling in flight.                                             |
+| `test/scenarios/failures.test.ts`     | Duplicate jobs. Timeout after acceptance. Request lost before acceptance. A provider without safe retry. A worker that crashed after the gate. Declines. Webhook signatures, duplicates, reordering and early arrival. Returns. Canceling in flight.                                              |
 | `test/scenarios/races.test.ts`        | Revocation racing dispatch, run 40 times; both orderings must occur or the test fails. Concurrent spending against a monthly limit. The per-payment limit.                                                                                                                                        |
 | `test/scenarios/controls.test.ts`     | Pause and resume. The support kill switch. Recovery. Self-freeze. The gate re-checks narrowed and expired grants. Unknown amounts stay unknown. Autopay and recent-payment warnings. Stale connections. Reconnect remapping. Isolation between owners.                                            |
 | `test/api.test.ts`                    | Sessions are required. An actor claimed by the client is ignored. 404 parity. The idempotency header. The 422 capability response. Approving without a passkey fails. Webhook signatures. The scope of audit exports.                                                                             |
-| `test/worker.test.ts`                 | The same behaviour driven by the real graphile-worker runner.                                                                                                                                                                                                                                     |
-| `test/security.test.ts`               | One test per hardening item in the threat model: passkey enrolment, notices and the trusted contact, sessions, cross-site requests, headers and CSP, rate limits, fail-closed demo features, database roles, signed audit checkpoints, webhook replay, log redaction.                             |
+| `test/worker.test.ts`                 | The same behavior driven by the real graphile-worker runner.                                                                                                                                                                                                                                      |
+| `test/security.test.ts`               | One test per hardening item in the threat model: passkey enrollment, notices and the trusted contact, sessions, cross-site requests, headers and CSP, rate limits, fail-closed demo features, database roles, signed audit checkpoints, webhook replay, log redaction.                            |
 | `test/fuzz.test.ts`                   | 1,500 random requests to real routes (other people's IDs, junk IDs, injection strings, random bodies) sent as a delegate, a family member with no access, and an unrelated user. No 5xx, no response containing any ID or label they may not see, and nothing owned by the owners changes.        |
 
 **Checking that the tests can fail.** Each guard was switched off in turn and its test re-run:
@@ -177,7 +177,7 @@ Three guards are deliberate second layers, and no test fails when one is removed
 
 ## Security
 
-Security is the organising principle, and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) is its specification.
+Security is the organizing principle, and [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) is its specification.
 Its central fact: in FinCEN's review of elder-theft reports, adult children were the most frequent
 perpetrators, at about 40% of cases. So the delegate, the person this product is built for, is treated as
 the first adversary. A delegate can see and prepare, but can never approve, widen their own access, or act
@@ -187,19 +187,19 @@ The hardening items, each with a test that fails when the guard is removed (swit
 all 17 caught). An independent red-team review then found ten more holes, mostly in the delegate model. They
 are fixed and listed in the threat model.
 
-| Guard                                                                                                                                                                          | Why                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Adding a passkey needs an existing passkey, or a recovery window opened by verified identity                                                                                   | A stolen session, or a delegate at the owner's device, could otherwise enrol their own passkey and then approve payments |
-| Notices to the owner, the delegate and a trusted contact who is independent of every delegate                                                                                  | The owner hears through a channel the delegate doesn't control                                                           |
-| Sessions: `__Host-` cookie, Secure, HttpOnly, SameSite=Strict; only a hash stored; 30-minute idle and 12-hour absolute expiry; sign out everywhere; recovery ends all sessions | Limits what a stolen cookie or a copied table is worth                                                                   |
-| Every state-changing request must come from our origin                                                                                                                         | Cross-site request forgery                                                                                               |
-| Strict CSP with no inline scripts and no third-party hosts; the font is self-hosted                                                                                            | Cross-site scripting, framing, data exfiltration                                                                         |
-| Rate limits on sign-in, step-up and webhooks                                                                                                                                   | Brute force and enumeration                                                                                              |
-| Demo login refused when `NODE_ENV=production`; secrets required outside dev                                                                                                    | Demo conveniences must not reach production                                                                              |
-| The app runs as a database role that can only append to the audit log, cannot read the provider's schema, and can only add jobs, not read or change them                       | Defence in depth if the app is compromised                                                                               |
-| Signed checkpoints of the audit chain, using a key the database never holds                                                                                                    | Detects a rewrite even by someone who recomputes every hash                                                              |
-| Webhook signatures cover a timestamp; anything older than 5 minutes is rejected                                                                                                | Replay of captured webhooks                                                                                              |
-| Logs hold method, route and status only                                                                                                                                        | Tokens, amounts and account IDs never reach logs                                                                         |
+| Guard                                                                                                                                                                          | Why                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Adding a passkey needs an existing passkey, or a recovery window opened by verified identity                                                                                   | A stolen session, or a delegate at the owner's device, could otherwise enroll their own passkey and then approve payments |
+| Notices to the owner, the delegate and a trusted contact who is independent of every delegate                                                                                  | The owner hears through a channel the delegate doesn't control                                                            |
+| Sessions: `__Host-` cookie, Secure, HttpOnly, SameSite=Strict; only a hash stored; 30-minute idle and 12-hour absolute expiry; sign out everywhere; recovery ends all sessions | Limits what a stolen cookie or a copied table is worth                                                                    |
+| Every state-changing request must come from our origin                                                                                                                         | Cross-site request forgery                                                                                                |
+| Strict CSP with no inline scripts and no third-party hosts; the font is self-hosted                                                                                            | Cross-site scripting, framing, data exfiltration                                                                          |
+| Rate limits on sign-in, step-up and webhooks                                                                                                                                   | Brute force and enumeration                                                                                               |
+| Demo login refused when `NODE_ENV=production`; secrets required outside dev                                                                                                    | Demo conveniences must not reach production                                                                               |
+| The app runs as a database role that can only append to the audit log, cannot read the provider's schema, and can only add jobs, not read or change them                       | Defence in depth if the app is compromised                                                                                |
+| Signed checkpoints of the audit chain, using a key the database never holds                                                                                                    | Detects a rewrite even by someone who recomputes every hash                                                               |
+| Webhook signatures cover a timestamp; anything older than 5 minutes is rejected                                                                                                | Replay of captured webhooks                                                                                               |
+| Logs hold method, route and status only                                                                                                                                        | Tokens, amounts and account IDs never reach logs                                                                          |
 
 In CI, alongside the tests:
 
@@ -220,9 +220,9 @@ Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 
 ## Known limits of R0
 
-- **Time zones.** The scheduled date is a calendar date, and the server accepts "yesterday in UTC" so that "today" works anywhere in the Americas. Owners' time zones are not modelled.
+- **Time zones.** The scheduled date is a calendar date, and the server accepts "yesterday in UTC" so that "today" works anywhere in the Americas. Owners' time zones are not modeled.
 - **One executor per intent type.** R2 will need capability routing across providers.
 - **Recovery.** The "independent verification" step is simulated; support attests to it.
-- **Postgres row-level security** is not used yet. The authorisation rule is enforced in the application and property-tested; the database roles give defence in depth. Row-level security would need every request to run in a transaction that carries the actor, and is planned for R1.
+- **Postgres row-level security** is not used yet. The authorization rule is enforced in the application and property-tested; the database roles give defense in depth. Row-level security would need every request to run in a transaction that carries the actor, and is planned for R1.
 - **Notices** go to an outbox shown in the app. Email and SMS delivery comes in R1.
 - **Webhook handling.** A webhook that conflicts with our state triggers a provider fetch inside a database transaction. That's fine for a simulator, but it should move out of the transaction before a real provider is used.
