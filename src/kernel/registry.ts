@@ -61,7 +61,7 @@ export interface IntentExecutor<D> {
   lookup(idempotencyKey: string): Promise<LookupResult>;
   getOperation(operationId: string): Promise<LookupResult>;
   cancel(operationId: string): Promise<{ canceled: boolean; reason: string }>;
-  // Maps a provider status to a normalised intent status or "Failed".
+  // Maps a provider status to a normalized intent status or "Failed".
   normalize(rawStatus: string): string;
   verifyWebhook(headers: Record<string, string | undefined>, body: string): ProviderEvent | null;
 }

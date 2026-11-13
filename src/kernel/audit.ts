@@ -30,7 +30,7 @@ export interface AuditRecord {
 }
 
 const GENESIS = "sha256:genesis";
-// Arbitrary constant; serialises audit appends so each row can chain to the previous hash.
+// Arbitrary constant; serializes audit appends so each row can chain to the previous hash.
 const AUDIT_LOCK = 7_331_001;
 
 function hashBody(r: Omit<AuditRecord, "seq" | "hash">): string {

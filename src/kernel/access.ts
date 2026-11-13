@@ -2,7 +2,7 @@ import { sql } from "kysely";
 import type { Executor } from "../db/index.js";
 import { KernelError, type Registry } from "./registry.js";
 
-// Authorisation is plain SQL over grants rather than a policy engine. The
+// Authorization is plain SQL over grants rather than a policy engine. The
 // rules that matter here are stateful (grant versions, row locks against
 // revocation, spending reservations), which a stateless engine such as Cedar
 // cannot enforce, so it would add a second system without removing any code.
@@ -75,7 +75,7 @@ export async function canAccess(
   return g !== undefined;
 }
 
-// Unauthorised and nonexistent look identical, so a guessed ID reveals nothing.
+// Unauthorized and nonexistent look identical, so a guessed ID reveals nothing.
 export async function requireAccess(
   ex: Executor,
   registry: Registry,
